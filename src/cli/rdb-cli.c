@@ -72,7 +72,7 @@ static void printUsage() {
     printf("\t-t, --target-redis-ver <VER>  Specify the target Redis version\n");
     printf("\t-h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)\n");
     printf("\t-p, --port <PORT>             Specify the server port (default: 6379)\n");
-    printf("\t-l, --pipeline-depth <value>  Number of pending commands before blocking for responses\n");
+    printf("\t-l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses\n");
 }
 
 static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) {

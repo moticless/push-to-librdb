@@ -21,7 +21,6 @@ typedef struct RdbReader RdbReader;
 typedef struct RdbParser RdbParser;
 typedef struct RdbHandlers RdbHandlers;
 typedef struct RdbMemAlloc RdbMemAlloc;
-typedef struct rax rax;  /* redis DS */
 
 /****************************************************************
  * Enums & Typedefs

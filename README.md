@@ -35,11 +35,20 @@ Run CLI extension of this library and parse RDB file to json (might need
 
     % ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb json
 
+Run CLI extension to generate RESP commands
+
+    % ./bin/rdb-cli ./test/dumps/single_list.rdb resp
+    *3
+    $5
+    RPUSH
+    $6
+    ...
+
 Run against Redis server, say, on address 127.0.0.1:6379, and upload RDB file:
 
     % ./bin/rdb-cli ./test/dumps/single_list.rdb redis -h 127.0.0.1 -p 6379
 
-(For more information and CLI usage, run it without any arguments)
+(rdb-cli usage available [here](#rdb-cli usage).)
 
 ## Motivation behind this project
 There is a genuine need by the Redis community for a versatile RDB file parser that can 
@@ -217,7 +226,7 @@ destruction, or when newer block replacing old one.
     -t, --target-redis-ver <VER>  Specify the target Redis version
     -h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)
     -p, --port <PORT>             Specify the server port (default: 6379)
-    -l, --pipeline-depth <value>  Number of pending commands before blocking for responses
+    -l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses
 
 <a name="Advanced"></a>
 ## Advanced

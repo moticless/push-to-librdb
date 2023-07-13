@@ -68,6 +68,7 @@ static int readReplies(RdbxRespToTcpLoader *ctx, int numToRead) {
 }
 
 /* For debugging, record the command into the cyclic array before sending it */
+/* TODO: on error response, report which command caused the failure */
 static inline void recordNewCmd(RdbxRespToTcpLoader *ctx, const struct iovec *cmd_iov, int iovcnt) {
     int recordCmdEntry = (ctx->respReader.countReplies + ctx->pendingCmds.num) % NUM_RECORDED_CMDS;
     char *recordCmdPrefixAt = ctx->pendingCmds.cmdPrefix[recordCmdEntry];
