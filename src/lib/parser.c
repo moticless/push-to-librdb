@@ -696,16 +696,17 @@ static RdbStatus allocFromCache(RdbParser *p,
 }
 
 static inline RdbStatus unpackList(RdbParser *p, unsigned char *lp) {
-    char tmp = 'x';
+    char dummy, tmp = 'x', *itemStart, *itemEnd;
     unsigned char *eptr;
     unsigned int vlen;
     long long vll;
 
     eptr = lpFirst( lp);
     while (eptr) {
-        char *item = (char *)lpGetValue(eptr, &vlen, &vll);
+        itemStart = (char *)lpGetValue(eptr, &vlen, &vll);
         BulkInfo *binfo;
-        if (item) {
+
+        if (itemStart) {
             /* The callback function expects a native string that is terminated
              * with '\0'. However, the string we have is packed without
              * termination. To avoid allocating a new string, we can follow these
@@ -715,27 +716,27 @@ static inline RdbStatus unpackList(RdbParser *p, unsigned char *lp) {
              * 2. allocFromCache(RQ_ALLOC_APP_BULK_REF) will:
              *    - Set last character '\0' to terminate the string.
              *    - Mark the string as a referenced bulk allocation (placement-new alloc)
+             *      Note: IF app expects APP_BULK, then it is not possible to return
+             *            a reference. A new memory will be allocated instead and gets a copy
              * 3. invoke CALL_HANDLERS_CB that will:
              *    - Supply the bulk to callbacks
              *    - Finalize by restoring original char (from tmp) */
-            tmp = item[vlen];
-            IF_NOT_OK_RETURN(allocFromCache(p, vlen, RQ_ALLOC_APP_BULK_REF, item, &binfo));
+            tmp = *(itemEnd = itemStart + vlen);
 
-            /* if requested ref another memory but forced to allocate a new buffer,
-             * (since configured RDB_BULK_ALLOC_EXTERN) then copy data to the new buffer */
-            if (binfo->bulkType != BULK_TYPE_REF)
-                memcpy(binfo->ref, item, vlen);
-
+            IF_NOT_OK_RETURN(allocFromCache(p, vlen, RQ_ALLOC_APP_BULK_REF, itemStart, &binfo));
         } else {
             int buflen = 32;
             IF_NOT_OK_RETURN(allocFromCache(p, buflen, RQ_ALLOC_APP_BULK, NULL, &binfo));
             vlen = ll2string(binfo->ref, buflen, vll);
             binfo->len = vlen;  /* update len */
+
+            /* set itemEnd to point a dummy char. CALL_HANDLERS_CB goanna write it on finalize */
+            itemEnd = &dummy;
         }
 
         registerAppBulkForNextCb(p, binfo);
         CALL_HANDLERS_CB(p,
-                         item[vlen] = tmp,   /* <<< finalize: restore modified char */
+                         *itemEnd = tmp,   /* <<< finalize: restore modified char */
                          RDB_LEVEL_DATA,
                          rdbData.handleListElement,
                          binfo->ref);
