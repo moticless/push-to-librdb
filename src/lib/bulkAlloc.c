@@ -446,6 +446,14 @@ static inline BulkType bulkUnmanagedResolveAllocType(RdbParser *p, AllocUnmngTyp
                 BULK_TYPE_REF,       /* RDB_BULK_ALLOC_EXTERN_OPT */
         },
 
+        /* parser request REF for internal use. Trivially released by bulkUnmanagedFree() */
+        [UNMNG_RQ_ALLOC_REF] = {
+                BULK_TYPE_REF,       /* RDB_BULK_ALLOC_STACK */
+                BULK_TYPE_REF,       /* RDB_BULK_ALLOC_HEAP */
+                BULK_TYPE_REF,       /* RDB_BULK_ALLOC_EXTERN */
+                BULK_TYPE_REF,       /* RDB_BULK_ALLOC_EXTERN_OPT */
+        },
+
     };
     return rqAlloc2bulkType[rq][p->mem.bulkAllocType];
 }

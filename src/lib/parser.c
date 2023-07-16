@@ -14,6 +14,7 @@
 #include "../../deps/redis/endianconv.h"
 #include "../../deps/redis/util.h"
 #include "../../deps/redis/listpack.h"
+#include "../../deps/redis/ziplist.h"
 #include "../../deps/redis/lzf.h"
 
 #define DONE_FILL_BULK SIZE_MAX
@@ -32,12 +33,14 @@ struct ParsingElementInfo peInfo[PE_MAX] = {
         [PE_END_KEY]          = {elementEndKey, "elementEndKey", "Parsing end key"},
         [PE_STRING]           = {elementString, "elementString", "Parsing string"},
         [PE_LIST]             = {elementList, "elementList", "Parsing list"},
+        [PE_ZIPLIST]          = {elementZipList, "elementZipList", "Parsing ZipList"},
 
         /* parsing raw data (RDB_LEVEL_RAW) */
         [PE_RAW_NEW_KEY]      = {elementRawNewKey, "elementRawNewKey", "Parsing new raw key-value"},
         [PE_RAW_END_KEY]      = {elementRawEndKey, "elementRawEndKey", "Parsing raw end key"},
         [PE_RAW_STRING]       = {elementRawString, "elementRawString", "Parsing raw string"},
         [PE_RAW_LIST]         = {elementRawList, "elementRawList", "Parsing raw list"},
+        [PE_RAW_ZIPLIST]      = {elementRawZipList, "elementRawZipList", "Parsing raw ZipList"},
 
         [PE_END_OF_FILE]      = {elementEndOfFile, "elementEndOfFile", "End parsing RDB file"},
 };
@@ -745,6 +748,40 @@ static inline RdbStatus unpackList(RdbParser *p, unsigned char *lp) {
     return RDB_STATUS_OK;
 }
 
+/* callback for ziplistValidateIntegrity.
+ * The ziplist element pointed by 'p' will be converted and stored into listpack. */
+static int ziplistEntryConvertAndValidate(unsigned char *p, unsigned int head_count, void *userdata) {
+    UNUSED(head_count);
+    unsigned char *str;
+    unsigned int slen;
+    long long vll;
+    unsigned char **lp = (unsigned char**)userdata;
+
+    if (!ziplistGet(p, &str, &slen, &vll)) return 0;
+
+    if (str)
+        *lp = lpAppend(*lp, (unsigned char*)str, slen);
+    else
+        *lp = lpAppendInteger(*lp, vll);
+
+    return 1;
+}
+
+/* return either OK or ERROR */
+static RdbStatus listpackCallback(RdbParser *p, BulkInfo *lpInfo) {
+    /* Silently skip empty listpack */
+    if (lpLength(lpInfo->ref) == 0) return RDB_STATUS_OK;
+
+    if (p->elmCtx.key.handleByLevel == RDB_LEVEL_STRUCT) {
+        registerAppBulkForNextCb(p, lpInfo);
+        CALL_HANDLERS_CB(p, NOP, RDB_LEVEL_STRUCT, rdbStruct.handleQListNode, lpInfo->ref);
+    } else {
+        /* unpackList makes multiple callbacks. all data in ctx.lp */
+        IF_NOT_OK_RETURN(unpackList(p, lpInfo->ref));
+    }
+    return RDB_STATUS_OK;
+}
+
 static RdbHandlers *createHandlersCommon(RdbParser *p,
                                          void *userData,
                                          RdbFreeFunc f,
@@ -764,32 +801,9 @@ static RdbHandlers *createHandlersCommon(RdbParser *p,
     return h;
 }
 
-/*** sub-element parsing ***/
-
-RdbStatus subElementCall(RdbParser *p, ParsingElementType next, int returnState) {
-
-    assert(p->callSubElm.callerElm == PE_MAX); /* prev sub-element flow ended */
-
-    /* release bulk from previous flow of subElement */
-    bulkUnmanagedFree(p, &p->callSubElm.bulkResult);
-
-    p->callSubElm.callerElm = p->parsingElement;
-    p->callSubElm.stateToReturn = returnState;
-    return nextParsingElement(p, next);
-}
-
-RdbStatus subElementReturn(RdbParser *p, BulkInfo *bulkResult) {
-    p->callSubElm.bulkResult = *bulkResult;
-    return nextParsingElementState(p, p->callSubElm.callerElm, p->callSubElm.stateToReturn);
-}
-
-void subElementCallEnd(RdbParser *p, RdbBulk *bulkResult, size_t *len) {
-    *bulkResult = p->callSubElm.bulkResult.ref;
-    *len = p->callSubElm.bulkResult.len;
-    p->callSubElm.callerElm = PE_MAX; /* mark as done */
-}
-
-/*** Parsing Elements ***/
+/****************************************************************
+ * Parsing Elements
+ ****************************************************************/
 
 RdbStatus elementRdbHeader(RdbParser *p) {
     BulkInfo *binfo;
@@ -941,6 +955,7 @@ RdbStatus elementNextRdbType(RdbParser *p) {
         case RDB_TYPE_LIST_QUICKLIST:       return nextParsingElementKeyValue(p, PE_RAW_LIST, PE_LIST);
         case RDB_TYPE_LIST_QUICKLIST_2:     return nextParsingElementKeyValue(p, PE_RAW_LIST, PE_LIST);
 
+        case RDB_TYPE_LIST_ZIPLIST:         return nextParsingElementKeyValue(p, PE_RAW_ZIPLIST, PE_ZIPLIST);
         case RDB_OPCODE_EOF:                return nextParsingElement(p, PE_END_OF_FILE);
 
         case RDB_OPCODE_FREQ:
@@ -957,7 +972,6 @@ RdbStatus elementNextRdbType(RdbParser *p) {
         case RDB_TYPE_ZSET_2:
         case RDB_TYPE_MODULE_2:
         case RDB_TYPE_HASH_ZIPMAP:
-        case RDB_TYPE_LIST_ZIPLIST:
         case RDB_TYPE_SET_INTSET:
         case RDB_TYPE_ZSET_ZIPLIST:
         case RDB_TYPE_HASH_ZIPLIST:
@@ -1016,19 +1030,18 @@ RdbStatus elementList(RdbParser *p) {
             updateElementState(p, ST_LIST_NEXT_NODE); /* fall-thru */
 
         case ST_LIST_NEXT_NODE: {
-            uint64_t container;
+            uint64_t container = QUICKLIST_NODE_CONTAINER_PACKED;
             BulkInfo *binfoNode;
 
-            /* is end of list */
-            if (ctx->list.numNodes == 0)
-                return nextParsingElement(p, PE_END_KEY);
+            if (p->currOpcode == RDB_TYPE_LIST_QUICKLIST_2) {
+                IF_NOT_OK_RETURN(rdbLoadLen(p, NULL, &container, NULL, NULL));
 
-            IF_NOT_OK_RETURN(rdbLoadLen(p, NULL, &container, NULL, NULL));
-
-            if (container != QUICKLIST_NODE_CONTAINER_PACKED &&
-                container != QUICKLIST_NODE_CONTAINER_PLAIN) {
-                RDB_reportError(p, RDB_ERR_QUICK_LIST_INTEG_CHECK, "elementList(1): Quicklist integrity check failed");
-                return RDB_STATUS_ERROR;
+                if (container != QUICKLIST_NODE_CONTAINER_PACKED &&
+                    container != QUICKLIST_NODE_CONTAINER_PLAIN) {
+                    RDB_reportError(p, RDB_ERR_QUICK_LIST_INTEG_CHECK,
+                                    "elementList(1): Quicklist integrity check failed");
+                    return RDB_STATUS_ERROR;
+                }
             }
 
             IF_NOT_OK_RETURN(rdbLoadString(p, RQ_ALLOC_APP_BULK, NULL, &binfoNode));
@@ -1048,44 +1061,84 @@ RdbStatus elementList(RdbParser *p) {
                 else
                     CALL_HANDLERS_CB(p, NOP, lvl, rdbData.handleListElement, binfoNode->ref);
 
-                return RDB_STATUS_OK;
-            }
+            } else {
 
-            unsigned char *lp = (unsigned char *) binfoNode->ref;
+                unsigned char *lp = (unsigned char *) binfoNode->ref;
 
-            if (p->currOpcode == RDB_TYPE_LIST_QUICKLIST_2) {
-                if (!lpValidateIntegrity(lp, binfoNode->len, p->deepIntegCheck, NULL, NULL)) {
-                    RDB_reportError(p, RDB_ERR_QUICK_LIST_INTEG_CHECK,
-                                   "elementList(2): Quicklist integrity check failed");
-                    return RDB_STATUS_ERROR;
+                if (p->currOpcode == RDB_TYPE_LIST_QUICKLIST_2) {
+                    if (!lpValidateIntegrity(lp, binfoNode->len, p->deepIntegCheck, NULL, NULL)) {
+                        RDB_reportError(p, RDB_ERR_QUICK_LIST_INTEG_CHECK,
+                                        "elementList(2): Quicklist integrity check failed");
+                        return RDB_STATUS_ERROR;
+                    }
+                    IF_NOT_OK_RETURN(listpackCallback(p, binfoNode));
+                } else {
+                    BulkInfo *binfoListpack;
+                    lp = lpNew(binfoNode->len);
+
+                    if (!ziplistValidateIntegrity(binfoNode->ref, binfoNode->len, 1, ziplistEntryConvertAndValidate, &lp)) {
+                        RDB_reportError(p, RDB_ERR_CHECKSUM_FAILURE, "Integrity check for ziplist has failed.");
+                        free(lp);
+                        return RDB_STATUS_ERROR;
+                    }
+
+                    allocFromCache(p, lpBytes(lp), RQ_ALLOC_APP_BULK_REF, (char *) lp, &binfoListpack); /*no need check return val*/
+                    RdbStatus res = listpackCallback(p, binfoListpack);
+                    free(lp);
+
+                    if (res == RDB_STATUS_ERROR)
+                        return RDB_STATUS_ERROR;
                 }
-            } else {
-                /* TODO: elementList() - ziplistValidateIntegrity */
-                assert(0);
             }
 
-            /* Silently skip empty listpack */
-            if (lpLength(lp) == 0) return RDB_STATUS_OK;
-
-            if (p->elmCtx.key.handleByLevel == RDB_LEVEL_STRUCT) {
-                registerAppBulkForNextCb(p, binfoNode);
-                CALL_HANDLERS_CB(p, NOP, RDB_LEVEL_STRUCT, rdbStruct.handleQListNode, binfoNode->ref);
-            } else {
-                /* unpackList makes multiple callbacks. all data in ctx.lp */
-                IF_NOT_OK_RETURN(unpackList(p, lp));
-            }
-
-            /* Update context (context update must being made only from safe state. For sure won't be rollback) */
-            --ctx->list.numNodes;
-
-            return updateElementState(p, ST_LIST_NEXT_NODE);
+            return (--ctx->list.numNodes) ? updateElementState(p, ST_LIST_NEXT_NODE) : nextParsingElement(p, PE_END_KEY);
         }
 
         default:
             RDB_reportError(p, RDB_ERR_QUICK_LIST_INVALID_STATE,
-                           "elementList() : invalid parsing element state");
+                           "elementList() : invalid parsing element state: %d", ctx->state);
             return RDB_STATUS_ERROR;
     }
+}
+
+RdbStatus elementZipList(RdbParser *p) {
+
+    BulkInfo *binfoStr, *binfoStruct;
+
+    IF_NOT_OK_RETURN(rdbLoadString(p, RQ_ALLOC_APP_BULK, NULL, &binfoStr));
+
+    /*** ENTER SAFE STATE ***/
+
+    unsigned char *lp = lpNew(binfoStr->len);
+    if (!ziplistValidateIntegrity(binfoStr->ref, binfoStr->len, 1,
+                                  ziplistEntryConvertAndValidate, &lp))
+    {
+        RDB_reportError(p, RDB_ERR_CHECKSUM_FAILURE, "Integrity check for ziplist has failed.");
+        goto err;
+    }
+
+    if (lpLength(lp) == 0) {
+        free(lp);
+        return RDB_STATUS_OK;
+    }
+
+    if (p->elmCtx.key.handleByLevel == RDB_LEVEL_STRUCT) {
+        IF_NOT_OK_GOTO(allocFromCache(p, lpBytes(lp), RQ_ALLOC_APP_BULK_REF, (char *) lp, &binfoStruct), err);
+
+        registerAppBulkForNextCb(p, binfoStruct);
+        CALL_HANDLERS_CB(p, free(lp), RDB_LEVEL_STRUCT, rdbStruct.handleQListNode, binfoStruct->ref);
+
+    } else {
+        /* unpackList makes multiple callbacks. all data in ctx.lp */
+        IF_NOT_OK_GOTO(unpackList(p, lp), err);
+
+        free(lp);
+    }
+
+    return nextParsingElement(p, PE_END_KEY);
+err:
+    free(lp);
+    return RDB_STATUS_ERROR;
 }
 
 RdbStatus elementEndOfFile(RdbParser *p) {
@@ -1094,7 +1147,6 @@ RdbStatus elementEndOfFile(RdbParser *p) {
         BulkInfo *bulkInfo;
         uint64_t cksum;
         uint64_t evaluated = p->checksum;
-
 
         IF_NOT_OK_RETURN(rdbLoad(p, 8, RQ_ALLOC, NULL, &bulkInfo));
         cksum = *((uint64_t *) bulkInfo->ref);
