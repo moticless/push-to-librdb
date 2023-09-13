@@ -33,6 +33,8 @@
 
 #define DONE_FILL_BULK SIZE_MAX
 
+char currKeyDbg[20] = {'\0'};
+
 struct ParsingElementInfo peInfo[PE_MAX] = {
         [PE_RDB_HEADER]       = {elementRdbHeader, "elementRdbHeader", "Start parsing RDB header"},
         [PE_NEXT_RDB_TYPE]    = {elementNextRdbType, "elementNextRdbType", "Parsing next RDB type"},
@@ -603,8 +605,10 @@ static RdbStatus parserMainLoop(RdbParser *p) {
 
     if (unlikely(p->debugData)) {
         while (1) {
-            RDB_log(p, RDB_LOG_DBG, "[Opcode=%d] %s(State=%d)",
+
+            RDB_log(p, RDB_LOG_DBG, "[Opcode=%03d]%s %s(State=%d)",
                     p->currOpcode,
+                    currKeyDbg,
                     peInfo[p->parsingElement].funcname,
                     p->elmCtx.state);
             status = peInfo[p->parsingElement].func(p);
@@ -646,8 +650,13 @@ static inline RdbStatus nextParsingElementKeyValue(RdbParser *p,
 
 static RdbRes handleNewKeyPrintDbg(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) {
     UNUSED(p,userData,info);
-    UNUSED(key);
-    RDB_log(p, RDB_LOG_DBG, "Key=%s, ", key);
+    snprintf(currKeyDbg, sizeof(currKeyDbg)-1, " [key=%s]", key);
+    return RDB_OK;
+}
+
+static RdbRes handleEndKeyPrintDbg(RdbParser *p, void *userData) {
+    UNUSED(p,userData);
+    currKeyDbg[0] = '\0';
     return RDB_OK;
 }
 
@@ -706,7 +715,7 @@ static RdbStatus finalizeConfig(RdbParser *p, int isParseFromBuff) {
 
     if ((p->debugData = getEnvVar(ENV_VAR_DEBUG_DATA, 0)) != 0) {
         RDB_setLogLevel(p, RDB_LOG_DBG);
-        RdbHandlersDataCallbacks cb = {.handleNewKey = handleNewKeyPrintDbg};
+        RdbHandlersDataCallbacks cb = {.handleNewKey = handleNewKeyPrintDbg, .handleEndKey = handleEndKeyPrintDbg};
         RDB_createHandlersData(p, &cb, NULL, NULL);
     }
 
