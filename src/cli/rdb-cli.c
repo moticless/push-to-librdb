@@ -69,11 +69,11 @@ static void printUsage(int shortUsage) {
     printf("OPTIONS:\n");
     printf("\t-l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')\n\n");
     printf("\tMultiple inclusion/exclusion of keys/types/dbs can be specified:\n");
-    printf("\t-k, --key <REGEX>             Include keys using regex\n");
+    printf("\t-k, --key <REGEX>             Filter keys using regex\n");
     printf("\t-K  --no-key <REGEX>          Exclude keys using regex\n");
-    printf("\t-t, --type <TYPE>             Include type {str|list|set|zset|hash|module|func}\n");
+    printf("\t-t, --type <TYPE>             Filter type {str|list|set|zset|hash|module|func}\n");
     printf("\t-T, --no-type <TYPE>          Exclude type {str|list|set|zset|hash|module|func}\n");
-    printf("\t-d, --dbnum <DBNUM>           Include DB number\n");
+    printf("\t-d, --dbnum <DBNUM>           Filter DB number\n");
     printf("\t-D, --no-dbnum <DBNUM>        Exclude DB number\n\n");
 
     printf("FORMAT_OPTIONS ('json'):\n");
@@ -303,9 +303,9 @@ int main(int argc, char **argv)
     /* first argument is expected to be input file */
     char *input = argv[1];
 
-    /* parse common options to all formatters. Apply filters later. They must
-     * attached only after FORMATTER registered its handlers such that they will
-     * precede FORMATTER handlers in pipeline */
+    /* Initially, read common options that are applicable to all formatters. To
+     * make it effective, apply filters later (applyFilters), ensuring that they
+     * are registered only after the FORMATTER registers its own handlers. */
     at = readCommonOptions(NULL, argc, argv, &options, 0);
 
     if (at == argc) {
