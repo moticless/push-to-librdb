@@ -237,12 +237,7 @@ destruction, or when newer block replacing old one.
             -T, --no-type <TYPE>          Exclude type {str|list|set|zset|hash|module|func}
             -d, --dbnum <DBNUM>           Include DB number
             -D, --no-dbnum <DBNUM>        Exclude DB number
-    
-    FORMAT_OPTIONS ('dump'):
-            -i, --include <EXTRAS>        To include: {aux-val|func}
-            -f, --flatten                 Print flatten json, without DBs Parenthesis
-            -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
-    
+     
     FORMAT_OPTIONS ('json'):
             -i, --include <EXTRAS>        To include: {aux-val|func}
             -f, --flatten                 Print flatten json, without DBs Parenthesis

@@ -76,11 +76,6 @@ static void printUsage(int shortUsage) {
     printf("\t-d, --dbnum <DBNUM>           Include DB number\n");
     printf("\t-D, --no-dbnum <DBNUM>        Exclude DB number\n\n");
 
-    printf("FORMAT_OPTIONS ('dump'):\n");
-    printf("\t-i, --include <EXTRAS>        To include: {aux-val|func}\n");
-    printf("\t-f, --flatten                 Print flatten json, without DBs Parenthesis\n");
-    printf("\t-o, --output <FILE>           Specify the output file. If not specified, output goes to stdout\n\n");
-
     printf("FORMAT_OPTIONS ('json'):\n");
     printf("\t-i, --include <EXTRAS>        To include: {aux-val|func}\n");
     printf("\t-f, --flatten                 Print flatten json, without DBs Parenthesis\n");
