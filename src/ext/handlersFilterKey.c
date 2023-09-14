@@ -13,7 +13,7 @@ struct RdbxFilter {
     int dbnum;             /* for filter db */
 };
 
-static void deleteFilterKeyCtx(RdbParser *p, void *data) {
+static void deleteFilterCtx(RdbParser *p, void *data) {
     RdbxFilter *ctx = (RdbxFilter *) data;
     if (ctx->regexInitialized) {
         regfree(&ctx->regex_compiled);
@@ -297,7 +297,7 @@ static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
         if (regcomp(&ctx->regex_compiled, keyRegex, REG_EXTENDED) != 0) {
             RDB_reportError(p, (RdbRes) RDBX_ERR_FILTER_FAILED_COMPILE_REGEX,
                             "FilterKey: Error compiling regular expression");
-            deleteFilterKeyCtx(p, ctx);
+            deleteFilterCtx(p, ctx);
             return NULL;
         }
         ctx->regexInitialized = 1;
@@ -318,7 +318,7 @@ static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
         defaultFilterDataCb(&dataCb);
         dataCb.handleNewKey = handleNewKey;
         dataCb.handleNewDb = handleNewDb;
-        RDB_createHandlersData(p, &dataCb, ctx, deleteFilterKeyCtx);
+        RDB_createHandlersData(p, &dataCb, ctx, deleteFilterCtx);
     }
 
     if (RDB_getNumHandlers(p, RDB_LEVEL_STRUCT)>0) {
@@ -326,7 +326,7 @@ static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
         defaultFilterStructCb(&structCb);
         structCb.handleNewKey = handleNewKey;
         structCb.handleNewDb = handleNewDb;
-        RDB_createHandlersStruct(p, &structCb, ctx, deleteFilterKeyCtx);
+        RDB_createHandlersStruct(p, &structCb, ctx, deleteFilterCtx);
     }
 
     if (RDB_getNumHandlers(p, RDB_LEVEL_RAW)>0) {
@@ -334,7 +334,7 @@ static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
         defaultFilterRawCb(&rawCb);
         rawCb.handleNewKey = handleNewKey;
         rawCb.handleNewDb = handleNewDb;
-        RDB_createHandlersRaw(p, &rawCb, ctx, deleteFilterKeyCtx);
+        RDB_createHandlersRaw(p, &rawCb, ctx, deleteFilterCtx);
     }
     return ctx;
 }
@@ -352,5 +352,3 @@ _LIBRDB_API RdbxFilter *RDBX_createHandlersFilterType(RdbParser *p, RdbDataType 
 _LIBRDB_API RdbxFilter *RDBX_createHandlersFilterDbNum(RdbParser *p, int dbnum, uint32_t exclude) {
     return createHandlersFilterCommon(p, NULL, NULL, &dbnum, exclude);
 }
-
-

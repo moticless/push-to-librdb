@@ -33,8 +33,6 @@
 
 #define DONE_FILL_BULK SIZE_MAX
 
-char currKeyDbg[20] = {'\0'};
-
 struct ParsingElementInfo peInfo[PE_MAX] = {
         [PE_RDB_HEADER]       = {elementRdbHeader, "elementRdbHeader", "Start parsing RDB header"},
         [PE_NEXT_RDB_TYPE]    = {elementNextRdbType, "elementNextRdbType", "Parsing next RDB type"},
@@ -552,11 +550,11 @@ _LIBRDB_API const char *RDB_getLibVersion(int *major, int *minor, int *patch) {
 
 static const char *getStatusString(RdbStatus status) {
     switch ((int) status) {
-        case RDB_STATUS_OK: return "RDB_STATUS_OK";
-        case RDB_STATUS_WAIT_MORE_DATA: return "RDB_STATUS_WAIT_MORE_DATA";
-        case RDB_STATUS_PAUSED: return "RDB_STATUS_PAUSED";
-        case RDB_STATUS_ERROR: return "RDB_STATUS_ERROR";
-        case RDB_STATUS_ENDED: return "(RDB_STATUS_ENDED)";  /* internal state. (Not part of API) */
+        case RDB_STATUS_OK: return "OK";
+        case RDB_STATUS_WAIT_MORE_DATA: return "WAIT_MORE_DATA";
+        case RDB_STATUS_PAUSED: return "PAUSED";
+        case RDB_STATUS_ERROR: return "ERROR";
+        case RDB_STATUS_ENDED: return "(ENDED)";  /* internal state. (Not part of API) */
         default: assert(0);
     }
 }
@@ -605,16 +603,31 @@ static RdbStatus parserMainLoop(RdbParser *p) {
 
     if (unlikely(p->debugData)) {
         while (1) {
+            char buff[500];
 
-            RDB_log(p, RDB_LOG_DBG, "[Opcode=%03d]%s %s(State=%d)",
-                    p->currOpcode,
-                    currKeyDbg,
-                    peInfo[p->parsingElement].funcname,
-                    p->elmCtx.state);
+            int isNewOpcode = (p->parsingElement == PE_NEXT_RDB_TYPE) ? 1 : 0;
+            int isNewDb = (p->parsingElement == PE_SELECT_DB) ? 1 : 0;
+
+            size_t bytesReadBefore = p->bytesRead;
+            const char *funcName = peInfo[p->parsingElement].funcname;
+            int stateBefore = p->elmCtx.state;
+
             status = peInfo[p->parsingElement].func(p);
-            RDB_log(p, RDB_LOG_DBG, "Return status=%s next %s(State=%d)\n", getStatusString(status),
-                    peInfo[p->parsingElement].funcname,
-                    p->elmCtx.state);
+
+            int at = snprintf(buff, sizeof(buff)-1, "[0x%08zx] %s(State=%d)", bytesReadBefore, funcName, stateBefore);
+
+            /* print important milestones in parsing */
+            if (isNewOpcode)
+                at += snprintf(buff+at, sizeof(buff)-1-at, " [Opcode=%03d]", p->currOpcode);
+            if (isNewDb)
+                at += snprintf(buff+at, sizeof(buff)-1-at, " [SelectDB=%d]", p->selectedDb);
+            if(p->currKeyDbg[0] != '\0')
+                at += snprintf(buff+at, sizeof(buff)-1-at, " [key=%s]", p->currKeyDbg);
+            if (status != RDB_STATUS_OK)
+                at += snprintf(buff+at, sizeof(buff)-1-at, " >>> [Status=%s]", getStatusString(status));
+
+            RDB_log(p, RDB_LOG_DBG, buff);
+
             if (status != RDB_STATUS_OK) break;
 
             /* if RDB_STATUS_OK then the parser completed a state and the cache is empty */
@@ -650,13 +663,13 @@ static inline RdbStatus nextParsingElementKeyValue(RdbParser *p,
 
 static RdbRes handleNewKeyPrintDbg(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) {
     UNUSED(p,userData,info);
-    snprintf(currKeyDbg, sizeof(currKeyDbg)-1, " [key=%s]", key);
+    snprintf(p->currKeyDbg, sizeof(p->currKeyDbg)-1, "%s", key);
     return RDB_OK;
 }
 
 static RdbRes handleEndKeyPrintDbg(RdbParser *p, void *userData) {
     UNUSED(p,userData);
-    currKeyDbg[0] = '\0';
+    p->currKeyDbg[0] = '\0';
     return RDB_OK;
 }
 
@@ -1150,6 +1163,7 @@ RdbStatus elementSelectDb(RdbParser *p) {
     IF_NOT_OK_RETURN(rdbLoadLen(p, NULL, &dbid, NULL, NULL));
 
     /*** ENTER SAFE STATE ***/
+    p->selectedDb = (int) dbid;
 
     CALL_COMMON_HANDLERS_CB(p, handleNewDb, ((int) dbid));
     return nextParsingElement(p, PE_NEXT_RDB_TYPE);

@@ -114,10 +114,9 @@ static void test_rdb_cli_filter_type(void **state) {
 
 static void test_rdb_cli_filter_mix(void **state) {
     UNUSED(state);
-    /* -t/--type */
+    /* Combine 'type' and 'key' filters */
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb --type str --key string json -f | grep string2 > /dev/null ");
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb --type str --key string json -f | grep string1 > /dev/null ");
-
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb -t str -k string json -f | grep lzf_compressed && exit 1 || exit 0 > /dev/null");
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb -t str -k string json -f | grep list1 && exit 1 || exit 0 > /dev/null ");
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb -t str -k string json -f | grep list2 && exit 1 || exit 0 > /dev/null ");

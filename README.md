@@ -230,7 +230,7 @@ destruction, or when newer block replacing old one.
     OPTIONS:
             -l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')
     
-            Multiple inclusion/exclusion of keys/types/dbs can be specified:
+            Multiple filters combination of keys/types/dbs can be specified:
             -k, --key <REGEX>             Filter keys using regex
             -K  --no-key <REGEX>          Exclude keys using regex
             -t, --type <TYPE>             Filter type {str|list|set|zset|hash|module|func}

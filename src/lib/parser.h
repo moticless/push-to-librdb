@@ -321,6 +321,7 @@ struct RdbParser {
     ElementCtx elmCtx;       /* parsing-element context */
     AppCallbackCtx appCbCtx; /* Trace bulks that will be given to next app cb. Cleared after each cb */
     RawContext rawCtx;
+    int selectedDb;
 
     /*** caching ***/
     BulkPool *cache;   /* Cleared after each parsing-element state change */
@@ -355,6 +356,7 @@ struct RdbParser {
     int rdbversion;       /* keep aside RDB version */
     uint64_t checksum;
     int debugData;      /* if envvar LIBRDB_DEBUG_DATA=1 then print state machine transitions */
+    char currKeyDbg[20];
 };
 
 /* reader base struct */

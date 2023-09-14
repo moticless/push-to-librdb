@@ -68,7 +68,7 @@ static void printUsage(int shortUsage) {
     printf("Usage: rdb-cli /path/to/dump.rdb [OPTIONS] {json|resp|redis} [FORMAT_OPTIONS]\n");
     printf("OPTIONS:\n");
     printf("\t-l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')\n\n");
-    printf("\tMultiple inclusion/exclusion of keys/types/dbs can be specified:\n");
+    printf("\tMultiple filters combination of keys/types/dbs can be specified:\n");
     printf("\t-k, --key <REGEX>             Filter keys using regex\n");
     printf("\t-K  --no-key <REGEX>          Exclude keys using regex\n");
     printf("\t-t, --type <TYPE>             Filter type {str|list|set|zset|hash|module|func}\n");
