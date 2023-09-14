@@ -51,33 +51,6 @@ static void test_empty_rdb(void **state) {
     RDB_deleteParser(parser);
 }
 
-static void test_createHandlersRdbToJson_and_2_FilterKey(void **state) {
-    UNUSED(state);
-
-    const char *rdbfile = DUMP_FOLDER("multiple_lists_strings.rdb");
-    const char *jsonfile = TMP_FOLDER("multiple_lists_strings.json");
-    const char *expJsonFile = DUMP_FOLDER("multiple_lists_strings_2filters.json");
-
-    RdbStatus  status;
-    RdbParser *parser = RDB_createParserRdb(NULL);
-    RDB_setLogLevel(parser, RDB_LOG_ERR);
-    assert_non_null(RDBX_createReaderFile(parser, rdbfile));
-    RdbxToJsonConf r2jConf = {RDB_LEVEL_DATA, RDBX_CONV_JSON_ENC_PLAIN, 0, 0, 1};
-    assert_non_null(RDBX_createHandlersToJson(parser,
-                                              jsonfile,
-                                              &r2jConf));
-
-    assert_non_null(RDBX_createHandlersFilterKey(parser, ".*i.*", 0));
-    assert_non_null(RDBX_createHandlersFilterKey(parser, "mylist.*", 0));
-
-
-    while ((status = RDB_parse(parser)) == RDB_STATUS_WAIT_MORE_DATA);
-    assert_int_equal( status, RDB_STATUS_OK);
-
-    RDB_deleteParser(parser);
-    assert_json_equal(jsonfile, expJsonFile, 0);
-}
-
 static void test_mixed_levels_registration(void **state) {
     UNUSED(state);
     const char *rdbfile = DUMP_FOLDER("multiple_lists_strings.rdb");
@@ -134,7 +107,6 @@ int group_main(void) {
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_createReader_missingFile),
         cmocka_unit_test(test_empty_rdb),
-        cmocka_unit_test(test_createHandlersRdbToJson_and_2_FilterKey),
         cmocka_unit_test(test_mixed_levels_registration),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

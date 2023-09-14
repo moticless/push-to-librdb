@@ -12,7 +12,7 @@ extern "C" {
 typedef struct RdbxRespToFileWriter RdbxRespToFileWriter;
 typedef struct RdbxReaderFile RdbxReaderFile;
 typedef struct RdbxReaderFileDesc RdbxReaderFileDesc;
-typedef struct RdbxFilterKey RdbxFilterKey;
+typedef struct RdbxFilter RdbxFilter;
 typedef struct RdbxToJson RdbxToJson;
 typedef struct RdbxToResp RdbxToResp;
 typedef struct RdbxRespToRedisLoader RdbxRespToRedisLoader;
@@ -79,9 +79,17 @@ _LIBRDB_API RdbxToJson *RDBX_createHandlersToJson(RdbParser *p,
  * Create Filter Handlers
  ****************************************************************/
 
-_LIBRDB_API RdbxFilterKey *RDBX_createHandlersFilterKey(RdbParser *p,
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterKey(RdbParser *p,
                                                         const char *keyRegex,
-                                                        uint32_t flags);
+                                                        uint32_t exclude);
+
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterType(RdbParser *p,
+                                                      RdbDataType type,
+                                                      uint32_t exclude);
+
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterDbNum(RdbParser *p,
+                                                       int dbnum,
+                                                       uint32_t exclude);
 
 /****************************************************************
  * Create RDB to RESP Handlers

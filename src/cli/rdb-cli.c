@@ -12,6 +12,12 @@
 FILE* logfile = NULL;
 #define LOG_FILE_PATH_DEF "./rdb-cli.log"
 
+/* common options to all FORMATTERS */
+typedef struct Options {
+    const char *logfilePath;
+    RdbRes (*formatFunc)(RdbParser *p, char *input, int argc, char **argv);
+} Options;
+
 static int getOptArg(int argc, char* argv[], int *at,  char *abbrvOpt, char *opt, char *token, int *flag, const char **arg) {
     if ((strcmp(token, abbrvOpt) == 0) || (strcmp(token, opt) == 0)) {
         if (arg) {
@@ -52,12 +58,28 @@ static void loggerWrap(RdbLogLevel l, const char *msg, ...) {
     logger(l, tmp);
 }
 
-static void printUsage() {
+static void printUsage(int shortUsage) {
+    if (shortUsage) {
+        printf("Usage: rdb-cli /path/to/dump.rdb [OPTIONS] {json|resp|redis} [FORMAT_OPTIONS]\n");
+        printf("For detailed usage, run command without arguments\n");
+        return;
+    }
     printf("[v%s] ", RDB_getLibVersion(NULL,NULL,NULL));
     printf("Usage: rdb-cli /path/to/dump.rdb [OPTIONS] {json|resp|redis} [FORMAT_OPTIONS]\n");
     printf("OPTIONS:\n");
-    printf("\t-k, --filter-key <REGEX>      Filter keys using regular expressions\n");
     printf("\t-l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')\n\n");
+    printf("\tMultiple inclusion/exclusion of keys/types/dbs can be specified:\n");
+    printf("\t-k, --key <REGEX>             Include keys using regex\n");
+    printf("\t-K  --no-key <REGEX>          Exclude keys using regex\n");
+    printf("\t-t, --type <TYPE>             Include type {str|list|set|zset|hash|module|func}\n");
+    printf("\t-T, --no-type <TYPE>          Exclude type {str|list|set|zset|hash|module|func}\n");
+    printf("\t-d, --dbnum <DBNUM>           Include DB number\n");
+    printf("\t-D, --no-dbnum <DBNUM>        Exclude DB number\n\n");
+
+    printf("FORMAT_OPTIONS ('dump'):\n");
+    printf("\t-i, --include <EXTRAS>        To include: {aux-val|func}\n");
+    printf("\t-f, --flatten                 Print flatten json, without DBs Parenthesis\n");
+    printf("\t-o, --output <FILE>           Specify the output file. If not specified, output goes to stdout\n\n");
 
     printf("FORMAT_OPTIONS ('json'):\n");
     printf("\t-i, --include <EXTRAS>        To include: {aux-val|func}\n");
@@ -99,7 +121,7 @@ static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) 
         }
 
         fprintf(stderr, "Invalid JSON [FORMAT_OPTIONS] argument: %s\n", opt);
-        printUsage();
+        printUsage(1);
         return RDB_ERR_GENERAL;
     }
 
@@ -140,7 +162,7 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
         if (getOptArg(argc, argv, &at, "-l", "--pipeline-depth", opt, NULL, &pipelineDepth)) continue;
 
         fprintf(stderr, "Invalid REDIS [FORMAT_OPTIONS] argument: %s\n", opt);
-        printUsage();
+        printUsage(1);
         return RDB_ERR_GENERAL;
     }
 
@@ -183,7 +205,7 @@ static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) 
         if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", opt, NULL, &(conf.dstRedisVersion))) continue;
 
         fprintf(stderr, "Invalid RESP [FORMAT_OPTIONS] argument: %s\n", opt);
-        printUsage();
+        printUsage(1);
         return RDB_ERR_GENERAL;
     }
 
@@ -200,50 +222,105 @@ static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) 
     return RDB_OK;
 }
 
-int main(int argc, char **argv)
-{
-    RdbStatus status;
-    const char *logfilePath = LOG_FILE_PATH_DEF;
-    const char *filterKey = NULL;
+int matchRdbDataType(const char *dataTypeStr) {
+    if (!strcmp(dataTypeStr, "str")) return RDB_DATA_TYPE_STRING;
+    if (!strcmp(dataTypeStr, "list")) return RDB_DATA_TYPE_LIST;
+    if (!strcmp(dataTypeStr, "set")) return RDB_DATA_TYPE_SET;
+    if (!strcmp(dataTypeStr, "zset")) return RDB_DATA_TYPE_ZSET;
+    if (!strcmp(dataTypeStr, "hash")) return RDB_DATA_TYPE_HASH;
+    if (!strcmp(dataTypeStr, "module")) return RDB_DATA_TYPE_MODULE;
+    if (!strcmp(dataTypeStr, "stream")) return RDB_DATA_TYPE_STREAM;
+    if (!strcmp(dataTypeStr, "func")) return RDB_DATA_TYPE_FUNCTION;
+
+    fprintf(stderr, "Invalid TYPE argument (%s). Valid values: str, list, set, zset, hash, module, stream, func",
+            dataTypeStr);
+    exit(RDB_ERR_GENERAL);
+}
+
+int readCommonOptions(RdbParser *p, int argc, char* argv[], Options *options, int applyFilters) {
+    const char *val;
     int at;
-    RdbRes res;
-    RdbRes (*formatFunc)(RdbParser *p, char *input, int argc, char **argv) = formatJson;
 
-    if (argc < 2) {
-        printUsage();
-        return 1;
-    }
-
-    /* first argument is input file */
-    char *input = argv[1];
+    /* default */
+    options->logfilePath = LOG_FILE_PATH_DEF;
+    options->formatFunc = formatJson;
 
     /* parse common options until FORMAT (json/resp/redis) specified */
     for (at = 2; at < argc; ++at) {
         char *opt = argv[at];
 
-        if (getOptArg(argc, argv, &at, "-l", "--log-file", opt, NULL, &logfilePath))
+        if (getOptArg(argc, argv, &at, "-l", "--log-file", opt, NULL, &(options->logfilePath)))
             continue;
 
-        if (getOptArg(argc, argv, &at, "-k", "--filter-key", opt, NULL, &filterKey))
+        if (getOptArg(argc, argv, &at, "-k", "--key", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterKey(p, val, 0 /*exclude*/);
             continue;
+        }
 
-        if (strcmp(opt, "json") == 0) { formatFunc = formatJson; break; }
-        else if (strcmp(opt, "resp") == 0) { formatFunc = formatResp; break; }
-        else if (strcmp(opt, "redis") == 0) { formatFunc = formatRedis; break; }
+        if (getOptArg(argc, argv, &at, "-K", "--no-key", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterKey(p, val, 1 /*exclude*/);
+            continue;
+        }
 
-        fprintf(stderr, "Invalid [OPTIONS] argument: %s\n", opt);
-        printUsage();
-        return RDB_ERR_GENERAL;
+        if (getOptArg(argc, argv, &at, "-t", "--type", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(val), 0);
+            continue;
+        }
+
+        if (getOptArg(argc, argv, &at, "-T", "--no-type", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(val), 1);
+            continue;
+        }
+
+        if (getOptArg(argc, argv, &at, "-d", "--dbnum", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterDbNum(p, atoi(val), 0);
+            continue;
+        }
+
+        if (getOptArg(argc, argv, &at, "-D", "--no-dbnum", opt, NULL, &val)) {
+            if (applyFilters) RDBX_createHandlersFilterDbNum(p, atoi(val), 1);
+            continue;
+        }
+
+        if (strcmp(opt, "json") == 0) { options->formatFunc = formatJson; break; }
+        else if (strcmp(opt, "resp") == 0) { options->formatFunc = formatResp; break; }
+        else if (strcmp(opt, "redis") == 0) { options->formatFunc = formatRedis; break; }
+
+        fprintf(stderr, "At argv[%d], unexpected OPTIONS argument: %s\n", at, opt);
+        printUsage(1);
+        exit(RDB_ERR_GENERAL);
     }
+    return at;
+}
+
+int main(int argc, char **argv)
+{
+    Options options;
+    RdbStatus status;
+    int at;
+    RdbRes res;
+
+    if (argc < 2) {
+        printUsage(0);
+        return 1;
+    }
+
+    /* first argument is expected to be input file */
+    char *input = argv[1];
+
+    /* parse common options to all formatters. Apply filters later. They must
+     * attached only after FORMATTER registered its handlers such that they will
+     * precede FORMATTER handlers in pipeline */
+    at = readCommonOptions(NULL, argc, argv, &options, 0);
 
     if (at == argc) {
         logger(RDB_LOG_ERR, "Missing <FORMAT> value.");
-        printUsage();
+        printUsage(1);
         return RDB_ERR_GENERAL;
     }
 
-    if ((logfile = fopen(logfilePath, "w")) == NULL) {
-        printf("Error opening log file for writing: %s \n", logfilePath);
+    if ((logfile = fopen(options.logfilePath, "w")) == NULL) {
+        printf("Error opening log file for writing: %s \n", options.logfilePath);
         return RDB_ERR_GENERAL;
     }
 
@@ -252,14 +329,14 @@ int main(int argc, char **argv)
     RDB_setLogLevel(parser, RDB_LOG_INF);
     RDB_setLogger(parser, logger);
 
-    if (RDB_OK != (res = formatFunc(parser, input, argc - at, argv + at)))
+    if (RDB_OK != (res = options.formatFunc(parser, input, argc - at, argv + at)))
         return res;
 
     if (RDB_OK != RDB_getErrorCode(parser))
         return RDB_getErrorCode(parser);
 
-    if (filterKey)
-        RDBX_createHandlersFilterKey(parser, filterKey, 0);
+    /* now that the formatter got registered, attach filters */
+    readCommonOptions(parser, argc, argv, &options, 1);
 
     while ((status = RDB_parse(parser)) == RDB_STATUS_WAIT_MORE_DATA);
 

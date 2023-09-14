@@ -207,7 +207,7 @@ core library vs. extension library ("RDB" vs "RDBX").
       RdbParser *parser = RDB_createParserRdb(NULL);
       RDBX_createReaderFile(parser, "dump.rdb");
       RDBX_createHandlersToJson(parser, "redis.json", NULL);
-      RDBX_createHandlersFilterKey(parser, "id_*", 0);
+      RDBX_createHandlersFilterKey(parser, "id_*", 0 /*exclude*/);
       RDB_parse(parser);
       RDB_deleteParser(parser);
 
@@ -228,28 +228,41 @@ destruction, or when newer block replacing old one.
 
     Usage: rdb-cli /path/to/dump.rdb [OPTIONS] {json|resp|redis} [FORMAT_OPTIONS]
     OPTIONS:
-    -k, --filter-key <REGEX>      Filter keys using regular expressions
-    -l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')
+            -l, --log-file <PATH>         Path to the log file (Default: './rdb-cli.log')
+    
+            Multiple inclusion/exclusion of keys/types/dbs can be specified:
+            -k, --key <REGEX>             Include keys using regex
+            -K  --no-key <REGEX>          Exclude keys using regex
+            -t, --type <TYPE>             Include type {str|list|set|zset|hash|module|func}
+            -T, --no-type <TYPE>          Exclude type {str|list|set|zset|hash|module|func}
+            -d, --dbnum <DBNUM>           Include DB number
+            -D, --no-dbnum <DBNUM>        Exclude DB number
+    
+    FORMAT_OPTIONS ('dump'):
+            -i, --include <EXTRAS>        To include: {aux-val|func}
+            -f, --flatten                 Print flatten json, without DBs Parenthesis
+            -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
     
     FORMAT_OPTIONS ('json'):
-    -w, --with-aux-values         Include auxiliary values
-    -f, --flatten                 Print flatten json, without DBs Parenthesis
-    -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
+            -i, --include <EXTRAS>        To include: {aux-val|func}
+            -f, --flatten                 Print flatten json, without DBs Parenthesis
+            -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
     
     FORMAT_OPTIONS ('resp'):
-    -r, --support-restore         Use the RESTORE command when possible
-    -t, --target-redis-ver <VER>  Specify the target Redis version. Helps determine which commands can
-                                  be applied. Particularly crucial if support-restore being used
-                                  as RESTORE is closely tied to specific RDB versions. If versions not
-                                  aligned the parser will generate higher-level commands instead.
-    -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
+            -r, --support-restore         Use the RESTORE command when possible
+            -t, --target-redis-ver <VER>  Specify the target Redis version. Helps determine which commands can
+                                          be applied. Particularly crucial if support-restore being used 
+                                          as RESTORE is closely tied to specific RDB versions. If versions not
+                                          aligned the parser will generate higher-level commands instead.
+            -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
     
     FORMAT_OPTIONS ('redis'):
-    -r, --support-restore         Use the RESTORE command when possible
-    -t, --target-redis-ver <VER>  Specify the target Redis version
-    -h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)
-    -p, --port <PORT>             Specify the server port (default: 6379)
-    -l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses
+            -r, --support-restore         Use the RESTORE command when possible
+            -t, --target-redis-ver <VER>  Specify the target Redis version
+            -h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)
+            -p, --port <PORT>             Specify the server port (default: 6379)
+            -l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses
+
 
 <a name="Advanced"></a>
 ## Advanced

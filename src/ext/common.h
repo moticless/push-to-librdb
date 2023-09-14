@@ -19,11 +19,4 @@ static inline void unused(void *dummy, ...) { (void)(dummy);}
 #define unlikely(x)     (x)
 #endif
 
-typedef union CallbacksUnion {
-    struct { HANDLERS_COMMON_CALLBACKS } common;
-    RdbHandlersRawCallbacks rawCb;
-    RdbHandlersStructCallbacks structCb;
-    RdbHandlersDataCallbacks dataCb;
-} CallbacksUnion;
-
 #endif /*define RDBX_COMMON_H*/

@@ -1,163 +1,356 @@
 #include <regex.h>
 #include <string.h>
+#include "../lib/defines.h" /* valid include since it brings only RDB_* defines */
 #include "common.h"
 
-struct RdbxFilterKey {
+struct RdbxFilter {
     regex_t regex_compiled;
-    int regexInitialized;
-    int regex_cflags;
-    int filteroutKey;
+    int exclude;
     RdbRes cbReturnValue;
+
+    int regexInitialized;  /* for filter keys */
+    RdbDataType type;      /* for filter types */
+    int dbnum;             /* for filter db */
 };
 
 static void deleteFilterKeyCtx(RdbParser *p, void *data) {
-    RdbxFilterKey *ctx = (RdbxFilterKey *) data;
+    RdbxFilter *ctx = (RdbxFilter *) data;
     if (ctx->regexInitialized) {
         regfree(&ctx->regex_compiled);
     }
     RDB_free(p, ctx);
 }
 
+static RdbDataType opcodeToType(int opcode) {
+    static int init = 0;
+    static int opToType[256];
+
+    if (likely(init))
+        return opToType[opcode];
+
+    init = 1;
+    memset(opToType, 0, sizeof(opToType));
+    /*string*/
+    opToType[RDB_TYPE_STRING] = RDB_DATA_TYPE_STRING;
+    /*list*/
+    opToType[RDB_TYPE_LIST] = RDB_DATA_TYPE_LIST;
+    opToType[RDB_TYPE_LIST_ZIPLIST] = RDB_DATA_TYPE_LIST;
+    opToType[RDB_TYPE_LIST_QUICKLIST] = RDB_DATA_TYPE_LIST;
+    opToType[RDB_TYPE_LIST_QUICKLIST_2] = RDB_DATA_TYPE_LIST;
+    /*set*/
+    opToType[RDB_TYPE_SET] = RDB_DATA_TYPE_SET;
+    opToType[RDB_TYPE_SET_INTSET] = RDB_DATA_TYPE_SET;
+    opToType[RDB_TYPE_SET_LISTPACK] = RDB_DATA_TYPE_SET;
+    /*zset*/
+    opToType[RDB_TYPE_ZSET] = RDB_DATA_TYPE_ZSET;
+    opToType[RDB_TYPE_ZSET_2] = RDB_DATA_TYPE_ZSET;
+    opToType[RDB_TYPE_ZSET_ZIPLIST] = RDB_DATA_TYPE_ZSET;
+    opToType[RDB_TYPE_ZSET_LISTPACK] = RDB_DATA_TYPE_ZSET;
+    /*hash*/
+    opToType[RDB_TYPE_HASH] = RDB_DATA_TYPE_HASH;
+    opToType[RDB_TYPE_HASH_ZIPMAP] = RDB_DATA_TYPE_HASH;
+    opToType[RDB_TYPE_HASH_ZIPLIST] = RDB_DATA_TYPE_HASH;
+    opToType[RDB_TYPE_HASH_LISTPACK] = RDB_DATA_TYPE_HASH;
+    /*module*/
+    opToType[RDB_TYPE_MODULE_2] = RDB_DATA_TYPE_MODULE;
+    opToType[RDB_OPCODE_MODULE_AUX] = RDB_DATA_TYPE_MODULE;
+    /*stream*/
+    opToType[RDB_TYPE_STREAM_LISTPACKS] = RDB_DATA_TYPE_STREAM;
+    opToType[RDB_TYPE_STREAM_LISTPACKS_2] = RDB_DATA_TYPE_STREAM;
+    opToType[RDB_TYPE_STREAM_LISTPACKS_3] = RDB_DATA_TYPE_STREAM;
+    /*func*/
+    opToType[RDB_OPCODE_FUNCTION2] = RDB_DATA_TYPE_FUNCTION;
+    return opToType[opcode];
+}
+
+/*** filtering BY key, type or dbnum ***/
+
+static RdbRes filterNewKeyByRegex(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) {
+    UNUSED(p, info);
+    RdbxFilter *ctx = userData;
+    if (regexec(&ctx->regex_compiled, key, 0, NULL, 0) == 0) /* if match */
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK_DONT_PROPAGATE : RDB_OK;
+    else
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK : RDB_OK_DONT_PROPAGATE;
+}
+
+static RdbRes filterNewKeyByType(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) {
+    UNUSED(p, key);
+    RdbxFilter *ctx = userData;
+    if (opcodeToType(info->opcode) == ctx->type) /* if match */
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK_DONT_PROPAGATE : RDB_OK;
+    else
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK : RDB_OK_DONT_PROPAGATE;
+}
+
+static RdbRes filterNewDbByNumber(RdbParser *p, void *userData,  int dbnum) {
+    UNUSED(p);
+    RdbxFilter *ctx = userData;
+    if (dbnum == ctx->dbnum) /* if match */
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK_DONT_PROPAGATE : RDB_OK;
+    else
+        return ctx->cbReturnValue = (ctx->exclude) ? RDB_OK : RDB_OK_DONT_PROPAGATE;
+}
+
 /*** Handling common ***/
 
 static RdbRes filterNewKey(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) {
-    UNUSED(p, info);
-    RdbxFilterKey *ctx = userData;
-    ctx->cbReturnValue = (regexec(&ctx->regex_compiled, key, 0, NULL, 0)) ? RDB_OK_DONT_PROPAGATE : RDB_OK;
-    return ctx->cbReturnValue;
+    UNUSED(p, key, info);
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterEndKey(RdbParser *p, void *userData) {
     UNUSED(p);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterNewDb(RdbParser *p, void *userData,  int dbnum) {
+    UNUSED(p, dbnum);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterDbSize(RdbParser *p, void *userData, uint64_t db_size, uint64_t exp_size) {
+    UNUSED(p, db_size, exp_size);
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 /*** Handling data ***/
 
 static RdbRes filterString(RdbParser *p, void *userData, RdbBulk str) {
     UNUSED(p, str);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterList(RdbParser *p, void *userData, RdbBulk item) {
     UNUSED(p, item);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterHash(RdbParser *p, void *userData, RdbBulk field, RdbBulk value) {
     UNUSED(p, field, value);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 /*** Handling struct ***/
 
 static RdbRes filterListLP(RdbParser *p, void *userData, RdbBulk listpack) {
     UNUSED(p, listpack);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterListZL(RdbParser *p, void *userData, RdbBulk ziplist) {
     UNUSED(p, ziplist);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterListPlain(RdbParser *p, void *userData, RdbBulk listNode) {
     UNUSED(p, listNode);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterHashLP(RdbParser *p, void *userData, RdbBulk listpack) {
     UNUSED(p, listpack);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterHashZM(RdbParser *p, void *userData, RdbBulk zipmap) {
     UNUSED(p, zipmap);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterHashZL(RdbParser *p, void *userData, RdbBulk ziplist) {
     UNUSED(p, ziplist);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterHashPlain(RdbParser *p, void *userData, RdbBulk field, RdbBulk value) {
     UNUSED(p, field, value);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterSetMember(RdbParser *p, void *userData, RdbBulk member) {
+    UNUSED(p, member);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterSetPlain(RdbParser *p, void *userData, RdbBulk item) {
+    UNUSED(p, item);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterSetIS(RdbParser *p, void *userData, RdbBulk intset) {
+    UNUSED(p, intset);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterSetLP(RdbParser *p, void *userData, RdbBulk listpack) {
+    UNUSED(p, listpack);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterFunction(RdbParser *p, void *userData, RdbBulk func) {
+    UNUSED(p, func);
+    return ((RdbxFilter *) userData)->cbReturnValue;
+}
+
+static RdbRes filterModule(RdbParser *p, void *userData, RdbBulk moduleName, size_t serializedSize) {
+    UNUSED(p, moduleName, serializedSize);
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 /*** Handling raw ***/
 
 static RdbRes filterFrag(RdbParser *p, void *userData, RdbBulk frag) {
     UNUSED(p, frag);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterRawBegin(RdbParser *p, void *userData, size_t size) {
     UNUSED(p, size);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
 static RdbRes filterRawEnd(RdbParser *p, void *userData) {
     UNUSED(p);
-    return ((RdbxFilterKey *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue;
 }
 
-RdbxFilterKey *RDBX_createHandlersFilterKey(RdbParser *p,
-                                            const char *keyRegex,
-                                            uint32_t flags)
-{
-    RdbxFilterKey *ctx;
-    UNUSED(flags);
+/*** common init ***/
 
-    CallbacksUnion callbacks;
-    memset (&callbacks, 0, sizeof(callbacks));
+static void defaultFilterDataCb(RdbHandlersDataCallbacks *dataCb) {
+    memset(dataCb, 0, sizeof(*dataCb));
+    dataCb->handleNewKey = filterNewKey;
+    dataCb->handleEndKey = filterEndKey;
+    dataCb->handleNewDb = filterNewDb;
+    dataCb->handleDbSize = filterDbSize;
 
-    if ( (ctx = RDB_alloc(p, sizeof(RdbxFilterKey))) == NULL)
+    dataCb->handleStringValue = filterString;
+    dataCb->handleListItem = filterList;
+    dataCb->handleHashField = filterHash;
+    dataCb->handleSetMember = filterSetMember;
+    dataCb->handleFunction = filterFunction;
+    dataCb->handleModule = filterModule;
+}
+
+static void defaultFilterStructCb(RdbHandlersStructCallbacks *structCb) {
+    memset(structCb, 0, sizeof(*structCb));
+    /* common */
+    structCb->handleNewKey = filterNewKey;
+    structCb->handleEndKey = filterEndKey;
+    structCb->handleNewDb = filterNewDb;
+    structCb->handleDbSize = filterDbSize;
+
+    /* string */
+    structCb->handleString = filterString;
+    /* list */
+    structCb->handleListLP = filterListLP;
+    structCb->handleListZL = filterListZL;
+    structCb->handleListPlain = filterListPlain;
+    /* hash */
+    structCb->handleHashPlain = filterHashPlain;
+    structCb->handleHashZL = filterHashZL;
+    structCb->handleHashLP = filterHashLP;
+    structCb->handleHashZM = filterHashZM;
+
+    /* set */
+    structCb->handleSetPlain = filterSetPlain;
+    structCb->handleHashZM = filterSetIS;
+    structCb->handleSetLP = filterSetLP;
+
+    /* func */
+    structCb->handleFunction = filterFunction;
+    /* module */
+    structCb->handleModule = filterModule;
+}
+
+static void defaultFilterRawCb(RdbHandlersRawCallbacks *rawCb) {
+    memset(rawCb, 0, sizeof(*rawCb));
+    /* common */
+    rawCb->handleNewKey = filterNewKey;
+    rawCb->handleEndKey = filterEndKey;
+    rawCb->handleNewDb = filterNewDb;
+    rawCb->handleDbSize = filterDbSize;
+
+    //callbacks.rawCb.handleBeginModuleAux  /* not partof keyspace */
+    rawCb->handleBegin = filterRawBegin;
+    rawCb->handleFrag = filterFrag;
+    rawCb->handleEnd = filterRawEnd;
+}
+
+static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
+                                              const char *keyRegex,
+                                              RdbDataType *type,
+                                              int *dbnum,
+                                              uint32_t exclude) {
+    RdbRes (*handleNewKey)(RdbParser *p, void *userData, RdbBulk key, RdbKeyInfo *info) = filterNewKey;
+    RdbRes (*handleNewDb)(RdbParser *p, void *userData,  int dbnum) = filterNewDb;
+    RdbxFilter *ctx;
+
+    if ( (ctx = RDB_alloc(p, sizeof(RdbxFilter))) == NULL)
         return NULL;
 
     ctx->regexInitialized = 0;
 
-    /* compile the regular expression */
-    if (regcomp(&ctx->regex_compiled, keyRegex, REG_EXTENDED) != 0) {
-        RDB_reportError(p, (RdbRes) RDBX_ERR_FILTER_FAILED_COMPILE_REGEX,
-                        "FilterKey: Error compiling regular expression");
-        deleteFilterKeyCtx(p, ctx);
-        return NULL;
-    } else {
+    /* specific if-else init to filter regex/type/dbnum */
+    if (keyRegex) {   /* filter keys by regex */
+        /* compile the regular expression */
+        if (regcomp(&ctx->regex_compiled, keyRegex, REG_EXTENDED) != 0) {
+            RDB_reportError(p, (RdbRes) RDBX_ERR_FILTER_FAILED_COMPILE_REGEX,
+                            "FilterKey: Error compiling regular expression");
+            deleteFilterKeyCtx(p, ctx);
+            return NULL;
+        }
         ctx->regexInitialized = 1;
+        handleNewKey = filterNewKeyByRegex;
+    } else if (type) { /* filter keys by type */
+        ctx->type = *type;
+        handleNewKey = filterNewKeyByType;
+    } else {  /* filter by dbnum */
+        ctx->dbnum = *dbnum;
+        handleNewDb = filterNewDbByNumber;
     }
 
-    callbacks.common.handleNewKey = filterNewKey;
-    callbacks.common.handleEndKey = filterEndKey;
+    ctx->exclude = exclude;
+    ctx->cbReturnValue = RDB_OK;
 
     if (RDB_getNumHandlers(p, RDB_LEVEL_DATA)>0) {
-        callbacks.dataCb.handleStringValue = filterString;
-        callbacks.dataCb.handleListItem = filterList;
-        callbacks.dataCb.handleHashField = filterHash;
-        RDB_createHandlersData(p, &callbacks.dataCb, ctx, deleteFilterKeyCtx);
+        RdbHandlersDataCallbacks dataCb;
+        defaultFilterDataCb(&dataCb);
+        dataCb.handleNewKey = handleNewKey;
+        dataCb.handleNewDb = handleNewDb;
+        RDB_createHandlersData(p, &dataCb, ctx, deleteFilterKeyCtx);
     }
 
     if (RDB_getNumHandlers(p, RDB_LEVEL_STRUCT)>0) {
-        /* string */
-        callbacks.structCb.handleString = filterString;
-        /* list */
-        callbacks.structCb.handleListLP = filterListLP;
-        callbacks.structCb.handleListZL = filterListZL;
-        callbacks.structCb.handleListPlain = filterListPlain;
-        /* hash */
-        callbacks.structCb.handleHashPlain = filterHashPlain;
-        callbacks.structCb.handleHashZL = filterHashZL;
-        callbacks.structCb.handleHashLP = filterHashLP;
-        callbacks.structCb.handleHashZM = filterHashZM;
-        RDB_createHandlersStruct(p, &callbacks.structCb, ctx, deleteFilterKeyCtx);
+        RdbHandlersStructCallbacks structCb;
+        defaultFilterStructCb(&structCb);
+        structCb.handleNewKey = handleNewKey;
+        structCb.handleNewDb = handleNewDb;
+        RDB_createHandlersStruct(p, &structCb, ctx, deleteFilterKeyCtx);
     }
 
     if (RDB_getNumHandlers(p, RDB_LEVEL_RAW)>0) {
-        callbacks.rawCb.handleFrag = filterFrag;
-        callbacks.rawCb.handleBegin = filterRawBegin;
-        callbacks.rawCb.handleEnd = filterRawEnd;
-        RDB_createHandlersRaw(p, &callbacks.rawCb, ctx, deleteFilterKeyCtx);
+        RdbHandlersRawCallbacks rawCb;
+        defaultFilterRawCb(&rawCb);
+        rawCb.handleNewKey = handleNewKey;
+        rawCb.handleNewDb = handleNewDb;
+        RDB_createHandlersRaw(p, &rawCb, ctx, deleteFilterKeyCtx);
     }
     return ctx;
 }
+
+/*** API ***/
+
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterKey(RdbParser *p, const char *keyRegex, uint32_t exclude) {
+    return createHandlersFilterCommon(p, keyRegex, NULL, NULL, exclude);
+}
+
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterType(RdbParser *p, RdbDataType type, uint32_t exclude) {
+    return createHandlersFilterCommon(p, NULL, &type, NULL, exclude);
+}
+
+_LIBRDB_API RdbxFilter *RDBX_createHandlersFilterDbNum(RdbParser *p, int dbnum, uint32_t exclude) {
+    return createHandlersFilterCommon(p, NULL, NULL, &dbnum, exclude);
+}
+
+
