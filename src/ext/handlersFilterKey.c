@@ -106,7 +106,7 @@ static RdbRes filterEndKey(RdbParser *p, void *userData) {
 
 static RdbRes filterNewDb(RdbParser *p, void *userData,  int dbnum) {
     UNUSED(p, dbnum);
-    return ((RdbxFilter *) userData)->cbReturnValue;
+    return ((RdbxFilter *) userData)->cbReturnValue = RDB_OK; /* clean possible leftovers */
 }
 
 static RdbRes filterDbSize(RdbParser *p, void *userData, uint64_t db_size, uint64_t exp_size) {
