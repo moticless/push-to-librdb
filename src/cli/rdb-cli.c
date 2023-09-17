@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 /* Rely only on API (and not internal parser headers) */
 #include "../../api/librdb-api.h"
@@ -18,8 +19,8 @@ typedef struct Options {
     RdbRes (*formatFunc)(RdbParser *p, char *input, int argc, char **argv);
 } Options;
 
-static int getOptArg(int argc, char* argv[], int *at,  char *abbrvOpt, char *opt, char *token, int *flag, const char **arg) {
-    if ((strcmp(token, abbrvOpt) == 0) || (strcmp(token, opt) == 0)) {
+static int getOptArg(int argc, char* argv[], int *at, char *abbrvOpt, char *opt, int *flag, const char **arg) {
+    if ((strcmp(argv[*at], abbrvOpt) == 0) || (strcmp(argv[*at], opt) == 0)) {
         if (arg) {
             if ((*at) + 1 == argc) {
                 fprintf(stderr, "%s (%s) requires one argument.", opt, abbrvOpt);
@@ -32,6 +33,22 @@ static int getOptArg(int argc, char* argv[], int *at,  char *abbrvOpt, char *opt
     } else {
         return 0;
     }
+}
+
+static int getOptArgVal(int argc, char* argv[], int *at, char *abbrvOpt, char *opt, int *flag, int *val, int min, int max) {
+    const char *valStr;
+    if (getOptArg(argc, argv, at,  abbrvOpt, opt, flag, &valStr)) {
+
+        *val = atoi(valStr);
+
+        /* check boundaries. Condition support also the limits INT_MAX and INT_MIN. */
+        if (!((*val>=min) && (*val <=max))) {
+            fprintf(stderr, "Value of %s (%s) must be a integer between %d and %d", opt, abbrvOpt, min, max);
+            exit(RDB_ERR_GENERAL);
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static void logger(RdbLogLevel l, const char *msg) {
@@ -49,7 +66,7 @@ static void logger(RdbLogLevel l, const char *msg) {
         printf("%s %s\n", logLevelStr[l], msg);
 }
 
-static void loggerWrap(RdbLogLevel l, const char *msg, ...) {
+void loggerWrap(RdbLogLevel l, const char *msg, ...) {
     char tmp[1024];
     va_list args;
     va_start(args, msg);
@@ -87,7 +104,8 @@ static void printUsage(int shortUsage) {
     printf("\t                              be applied. Particularly crucial if support-restore being used \n");
     printf("\t                              as RESTORE is closely tied to specific RDB versions. If versions not\n");
     printf("\t                              aligned the parser will generate higher-level commands instead.\n");
-    printf("\t-o, --output <FILE>           Specify the output file. If not specified, output goes to stdout\n\n");
+    printf("\t-o, --output <FILE>           Specify the output file. If not specified, output goes to stdout\n");
+    printf("\t-e, --enum-commands           Command enumeration by preceding commands with `echo <cmd-id>'\n\n");
 
     printf("FORMAT_OPTIONS ('redis'):\n");
     printf("\t-r, --support-restore         Use the RESTORE command when possible\n");
@@ -95,6 +113,7 @@ static void printUsage(int shortUsage) {
     printf("\t-h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)\n");
     printf("\t-p, --port <PORT>             Specify the server port (default: 6379)\n");
     printf("\t-l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses\n");
+    printf("\t-s, --start-cmd-num <NUM>     Start writing redis from command number\n\n");
 }
 
 static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) {
@@ -105,10 +124,10 @@ static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) 
     /* parse specific command options */
     for (int at = 1; at < argc; ++at) {
         char *opt = argv[at];
-        if (getOptArg(argc, argv, &at, "-o", "--output", opt, NULL, &output)) continue;
-        if (getOptArg(argc, argv, &at, "-f", "--flatten", opt, &flatten, NULL)) continue;
+        if (getOptArg(argc, argv, &at, "-o", "--output", NULL, &output)) continue;
+        if (getOptArg(argc, argv, &at, "-f", "--flatten", &flatten, NULL)) continue;
 
-        if (getOptArg(argc, argv, &at, "-i", "--include", opt, NULL, &includeArg)) {
+        if (getOptArg(argc, argv, &at, "-i", "--include", NULL, &includeArg)) {
             if (strcmp(includeArg, "aux-val") == 0) { includeAuxField = 1; continue; }
             if (strcmp(includeArg, "func") == 0) { includeFunc = 1; continue; }
             fprintf(stderr, "Invalid argument for '--include': %s\n", includeArg);
@@ -138,40 +157,26 @@ static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) 
 }
 
 static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv) {
-    int port = 6379;
-    int pipeDepthVal=0;
+    int startCmdNum=0, pipeDepthVal=0, port = 6379;
+    RdbxRespToRedisLoader *respToRedis;
     RdbxToResp *rdbToResp;
     const char *hostname = "127.0.0.1";
-    const char *portStr=NULL;
-    const char *pipelineDepth=NULL;
 
     RdbxToRespConf conf = { 0 };
 
     /* parse specific command options */
     for (int at = 1; at < argc; ++at) {
         char *opt = argv[at];
-        if (getOptArg(argc, argv, &at, "-h", "--hostname", opt, NULL, &hostname)) continue;
-        if (getOptArg(argc, argv, &at, "-p", "--port", opt, NULL, &portStr)) continue;
-        if (getOptArg(argc, argv, &at, "-r", "--support-restore", opt, &(conf.supportRestore), NULL)) continue;
-        if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", opt, NULL, &(conf.dstRedisVersion))) continue;
-        if (getOptArg(argc, argv, &at, "-l", "--pipeline-depth", opt, NULL, &pipelineDepth)) continue;
+        if (getOptArg(argc, argv, &at, "-h", "--hostname", NULL, &hostname)) continue;
+        if (getOptArgVal(argc, argv, &at, "-p", "--port", NULL, &port, 1, 65535)) continue;
+        if (getOptArg(argc, argv, &at, "-r", "--support-restore", &(conf.supportRestore), NULL)) continue;
+        if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", NULL, &(conf.dstRedisVersion))) continue;
+        if (getOptArgVal(argc, argv, &at, "-l", "--pipeline-depth", NULL, &pipeDepthVal, 1, 1000)) continue;
+        if (getOptArgVal(argc, argv, &at, "-n", "--start-cmd-num", NULL, &startCmdNum, 1, INT_MAX)) continue;
 
         fprintf(stderr, "Invalid REDIS [FORMAT_OPTIONS] argument: %s\n", opt);
         printUsage(1);
         return RDB_ERR_GENERAL;
-    }
-
-    if ((pipelineDepth) && ((pipeDepthVal = atoi(pipelineDepth)) == 0)) {
-        logger(RDB_LOG_ERR, "Value of '--pipeline-depth' ('-l') must be positive integer, bigger than 0");
-        return RDB_ERR_GENERAL;
-    }
-
-    if (portStr) {
-        port = atoi(portStr);
-        if (port == 0) {
-            loggerWrap(RDB_LOG_ERR, "Invalid port: %s\n", portStr);
-            return RDB_ERR_GENERAL;
-        }
     }
 
     if (RDBX_createReaderFile(parser, input) == NULL)
@@ -180,8 +185,14 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
     if ((rdbToResp = RDBX_createHandlersToResp(parser, &conf)) == NULL)
         return RDB_ERR_GENERAL;
 
-    if (RDBX_createRespToRedisTcp(parser, rdbToResp, hostname, port) == NULL)
+    if (startCmdNum)
+        RDBX_writeFromCmdNumber(rdbToResp, startCmdNum);
+
+    if ((respToRedis = RDBX_createRespToRedisTcp(parser, rdbToResp, hostname, port)) == NULL)
         return RDB_ERR_GENERAL;
+
+    if (pipeDepthVal)
+        RDBX_setPipelineDepth(respToRedis, pipeDepthVal);
 
     return RDB_OK;
 }
@@ -189,15 +200,17 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
 static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) {
     RdbxToResp *rdbToResp;
     const char *output = NULL;/*default:stdout*/
+    int commandEnum = 0;
 
     RdbxToRespConf conf = { 0 };
 
     /* parse specific command options */
     for (int at = 1; at < argc; ++at) {
         char *opt = argv[at];
-        if (getOptArg(argc, argv, &at, "-o", "--output", opt, NULL, &output)) continue;
-        if (getOptArg(argc, argv, &at, "-r", "--support-restore", opt, &(conf.supportRestore), NULL)) continue;
-        if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", opt, NULL, &(conf.dstRedisVersion))) continue;
+        if (getOptArg(argc, argv, &at, "-o", "--output", NULL, &output)) continue;
+        if (getOptArg(argc, argv, &at, "-r", "--support-restore", &(conf.supportRestore), NULL)) continue;
+        if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", NULL, &(conf.dstRedisVersion))) continue;
+        if (getOptArg(argc, argv, &at, "-e", "--enum-commands", &commandEnum, NULL)) continue;
 
         fprintf(stderr, "Invalid RESP [FORMAT_OPTIONS] argument: %s\n", opt);
         printUsage(1);
@@ -213,6 +226,9 @@ static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) 
 
     if (RDBX_createRespToFileWriter(parser, rdbToResp, output) == NULL)
         return RDB_ERR_GENERAL;
+
+    if (commandEnum)
+        RDBX_enumerateCmds(rdbToResp);
 
     return RDB_OK;
 }
@@ -233,7 +249,8 @@ int matchRdbDataType(const char *dataTypeStr) {
 }
 
 int readCommonOptions(RdbParser *p, int argc, char* argv[], Options *options, int applyFilters) {
-    const char *val;
+    const char *typeFilter, *keyFilter;
+    int dbNumFilter;
     int at;
 
     /* default */
@@ -244,36 +261,36 @@ int readCommonOptions(RdbParser *p, int argc, char* argv[], Options *options, in
     for (at = 2; at < argc; ++at) {
         char *opt = argv[at];
 
-        if (getOptArg(argc, argv, &at, "-l", "--log-file", opt, NULL, &(options->logfilePath)))
+        if (getOptArg(argc, argv, &at, "-l", "--log-file", NULL, &(options->logfilePath)))
             continue;
 
-        if (getOptArg(argc, argv, &at, "-k", "--key", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterKey(p, val, 0 /*exclude*/);
-            continue;
-        }
-
-        if (getOptArg(argc, argv, &at, "-K", "--no-key", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterKey(p, val, 1 /*exclude*/);
+        if (getOptArg(argc, argv, &at, "-k", "--key", NULL, &keyFilter)) {
+            if (applyFilters) RDBX_createHandlersFilterKey(p, keyFilter, 0);
             continue;
         }
 
-        if (getOptArg(argc, argv, &at, "-t", "--type", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(val), 0);
+        if (getOptArg(argc, argv, &at, "-K", "--no-key", NULL, &keyFilter)) {
+            if (applyFilters) RDBX_createHandlersFilterKey(p, keyFilter, 1);
             continue;
         }
 
-        if (getOptArg(argc, argv, &at, "-T", "--no-type", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(val), 1);
+        if (getOptArg(argc, argv, &at, "-t", "--type", NULL, &typeFilter)) {
+            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 0);
             continue;
         }
 
-        if (getOptArg(argc, argv, &at, "-d", "--dbnum", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterDbNum(p, atoi(val), 0);
+        if (getOptArg(argc, argv, &at, "-T", "--no-type", NULL, &typeFilter)) {
+            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 1);
             continue;
         }
 
-        if (getOptArg(argc, argv, &at, "-D", "--no-dbnum", opt, NULL, &val)) {
-            if (applyFilters) RDBX_createHandlersFilterDbNum(p, atoi(val), 1);
+        if (getOptArgVal(argc, argv, &at, "-d", "--dbnum", NULL, &dbNumFilter, 0, INT_MAX)) {
+            if (applyFilters) RDBX_createHandlersFilterDbNum(p, dbNumFilter, 0);
+            continue;
+        }
+
+        if (getOptArgVal(argc, argv, &at, "-D", "--no-dbnum", NULL, &dbNumFilter, 0, INT_MAX)) {
+            if (applyFilters) RDBX_createHandlersFilterDbNum(p, dbNumFilter, 1);
             continue;
         }
 

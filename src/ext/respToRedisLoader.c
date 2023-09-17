@@ -31,7 +31,6 @@ struct RdbxRespToRedisLoader {
         int num;
         int pipelineDepth;
         char cmdPrefix[NUM_RECORDED_CMDS][RECORDED_DATA_MAX_LEN];
-        int cmdAt;
     } pendingCmds;
 
     RespReaderCtx respReader;

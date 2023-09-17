@@ -46,6 +46,17 @@ struct RdbxToResp {
 
     RdbxToRespConf conf;
 
+    struct RdbxToRespDebug {
+
+        size_t cmdNum;
+
+        /* configuration */
+#define RFLAG_CMD_ENUM           (1<<0) /* Flag for command enumeration */
+#define RFLAG_WRITE_FROM_CMD_NUM (1<<1) /* Flag for writing commands from a specific number */
+        int flags;
+        size_t writeFromCmdNum;
+    } debug;
+
     /* Init to 3. Attempted to be released three times on termination */
     int refcount;
 
@@ -165,6 +176,25 @@ static void resolveSupportRestore(RdbParser *p, RdbxToResp *ctx, int srcRdbVer) 
 
 static inline RdbRes writevWrap(RdbxToResp *ctx, struct iovec *iov, int cnt, int startCmd, int endCmd) {
     RdbxRespWriter *writer = &ctx->respWriter;
+
+    if (unlikely(ctx->debug.flags)) {
+        size_t currCmdNum = ctx->debug.cmdNum++;
+        if ((ctx->debug.flags & RFLAG_WRITE_FROM_CMD_NUM) &&
+            (currCmdNum < ctx->debug.writeFromCmdNum))
+            return RDB_OK;
+       if (ctx->debug.flags & RFLAG_CMD_ENUM) {
+           char buf[100];
+           int len = snprintf(buf, sizeof(buf)-1, "*2\r\n$4\r\nECHO\r\n$41\r\n~~~~ Command Number: %-15zu\r\n", currCmdNum);
+           struct iovec iovEnum = { buf, len };
+
+           if (unlikely(writer->writev(writer->ctx, &iovEnum, 1, 1, 1))) {
+               RdbRes errCode = RDB_getErrorCode(ctx->parser);
+               assert(errCode != RDB_OK);
+               return RDB_getErrorCode(ctx->parser);
+           }
+        }
+    }
+
     if (unlikely(writer->writev(writer->ctx, iov, cnt, startCmd, endCmd))) {
         RdbRes errCode = RDB_getErrorCode(ctx->parser);
         assert(errCode != RDB_OK);
@@ -612,4 +642,13 @@ _LIBRDB_API void RDBX_attachRespWriter(RdbxToResp *rdbToResp, RdbxRespWriter *wr
     assert (rdbToResp->respWriterConfigured == 0);
     rdbToResp->respWriter = *writer;
     rdbToResp->respWriterConfigured = 1;
+}
+
+_LIBRDB_API void RDBX_enumerateCmds(RdbxToResp *rdbToResp) {
+    rdbToResp->debug.flags |= RFLAG_CMD_ENUM;
+}
+
+_LIBRDB_API void RDBX_writeFromCmdNumber(RdbxToResp *rdbToResp, size_t cmdNum) {
+    rdbToResp->debug.flags |= RFLAG_WRITE_FROM_CMD_NUM;
+    rdbToResp->debug.writeFromCmdNum = cmdNum;
 }

@@ -178,6 +178,35 @@ _LIBRDB_API RdbxRespToRedisLoader *RDBX_createRespToRedisFd(RdbParser *p,
 
 _LIBRDB_API void RDBX_setPipelineDepth(RdbxRespToRedisLoader *r2r, int depth);
 
+/****************************************************************
+ * Debugging RESP to Redis
+ *
+ * This section provides debugging assistance for analyzing Redis server failures
+ * when attempting to stream multiple RESP commands. This analysis can be particularly
+ * challenging in the following scenarios:
+ *
+ * - When using pipeline mode, which involves multiple concurrent pending commands
+ *   at any given moment.
+ * - When not using the `delKeyBeforeWrite` flag and Redis server is not empty.
+ * - In a production environment.
+ *
+ * The following two debug functions are designed to help with the analysis of a given
+ * RDB file:
+ *
+ * RDBX_enumerateCmds
+ *   Enumerates commands by preceding any RESP command with an additional trivial
+ *   RESP command of the type 'echo <cmd-number>'. This can be especially useful since
+ *   the RESP-to-Redis instance prints the command number in case of a failure.
+ *
+ * RDBX_writeFromCmdNumber
+ *   Writing commands starting from specified command-number and onward as part
+ *   of reproducing effort. Once the problem was resolved, it might be also useful
+ *   to continue uploading the redis server from the point it got failed.
+ ****************************************************************/
+_LIBRDB_API void RDBX_enumerateCmds(RdbxToResp *rdbToResp);
+
+_LIBRDB_API void RDBX_writeFromCmdNumber(RdbxToResp *rdbToResp, size_t cmdNum);
+
 #ifdef __cplusplus
 }
 #endif

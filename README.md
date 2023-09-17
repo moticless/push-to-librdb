@@ -250,6 +250,7 @@ destruction, or when newer block replacing old one.
                                           as RESTORE is closely tied to specific RDB versions. If versions not
                                           aligned the parser will generate higher-level commands instead.
             -o, --output <FILE>           Specify the output file. If not specified, output goes to stdout
+            -e, --enum-commands           Command enumeration by preceding commands with `echo <cmd-id>'
     
     FORMAT_OPTIONS ('redis'):
             -r, --support-restore         Use the RESTORE command when possible
@@ -257,6 +258,7 @@ destruction, or when newer block replacing old one.
             -h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)
             -p, --port <PORT>             Specify the server port (default: 6379)
             -l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses
+            -s, --start-cmd-num <NUM>     Start writing redis from command number
 
 
 <a name="Advanced"></a>
@@ -447,3 +449,32 @@ triggers the next parsing element through the `parserMainLoop` function. This
 approach not only adds an extra layer of control to the parser along execution steps, but
 also enables parsing of customized RDB files or even specific parts of the file. This
 functionality can be further enhanced as needed.
+
+## Troubleshooting
+This section provides assistance for diagnosing and debugging Redis server failures that
+may occur when attempting to stream RESP commands using the parser. Analyzing these failures
+can be particularly challenging in various scenarios:
+
+- **Pipeline Mode**: When using pipeline mode, which involves multiple concurrent pending 
+commands at any given moment.
+
+- **Empty Redis Server**: When the `delKeyBeforeWrite` flag is not used, and the Redis 
+server is not empty.
+
+- **Production Env**: In a production environment where reliability and efficiency 
+are critical.
+
+
+One approach can be to have a dry-run by assisting `RDBX_createRespToFileWriter` and dump
+RESP commands into file for investigation. The following debug functions are designed to 
+further help with the investigation:
+
+### Function RDBX_enumerateCmds
+Enumerate commands by preceding any RESP command with an additional trivial RESP command 
+of the type `echo <cmd-number>`. This can be especially useful since the RESP-to-Redis 
+instance prints the problematic command ID (and command prefix) in case of a failure.
+
+### Function RDBX_writeFromCmdNumber
+Function allows you to write commands starting from a specified command-number and onward 
+as part of a reproducing effort. This can be helpful in resolving issues and continuing the 
+upload to the Redis server from the point of failure or skipping problematic commands.
