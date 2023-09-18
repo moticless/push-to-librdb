@@ -39,7 +39,7 @@ static void test_rdb_cli_resp_common(const char *rdbfile) {
     RDB_deleteParser(parser);
 
     /* rdb-cli RDB to RESP and stream toward Redis Server */
-    runSystemCmd("./bin/rdb-cli %s redis -h %s -p %d", rdbfile, "127.0.0.1", redisPort);
+    runSystemCmd("./bin/rdb-cli %s redis -h %s -p %d", rdbfile, "127.0.0.1", getRedisPort());
 
     /* DUMP-RDB from Redis */
     sendRedisCmd("SAVE", REDIS_REPLY_STATUS, NULL);
@@ -123,6 +123,26 @@ static void test_rdb_cli_filter_mix(void **state) {
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb -t str -k string json -f | grep list3 && exit 1 || exit 0 > /dev/null ");
 }
 
+static void test_rdb_cli_redis_auth(void **state) {
+    UNUSED(state);
+    /* check password authentication */
+    setupRedisServer("--requirepass abc");
+
+    /* auth custom command if proxy is in the middle */
+    runSystemCmd(" ./bin/rdb-cli ./test/dumps/single_key.rdb redis -c \"auth abc\" -p %d  > /dev/null ", getRedisPort());
+
+    /* auth pwd */
+    sendRedisCmd("FLUSHALL", REDIS_REPLY_ERROR, NULL); /* expected to fail */
+    sendRedisCmd("AUTH abc", REDIS_REPLY_STATUS, NULL); /* now expected to succeed */
+    runSystemCmd(" ./bin/rdb-cli ./test/dumps/single_key.rdb redis --password abc -p %d  > /dev/null ", getRedisPort());
+
+    /* auth user */
+    sendRedisCmd("ACL SETUSER newuser on >newpwd  +@all ~*", REDIS_REPLY_STATUS, NULL);
+    sendRedisCmd("FLUSHALL", REDIS_REPLY_STATUS, NULL);
+    runSystemCmd(" ./bin/rdb-cli ./test/dumps/single_key.rdb redis -P newpwd -u newuser -p %d  > /dev/null ", getRedisPort());
+
+    teardownRedisServer();
+}
 
 /*************************** group_test_rdb_cli *******************************/
 int group_test_rdb_cli(void) {
@@ -139,6 +159,7 @@ int group_test_rdb_cli(void) {
             cmocka_unit_test_setup(test_rdb_cli_filter_key, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_type, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_mix, setupTest),
+            cmocka_unit_test_setup(test_rdb_cli_redis_auth, setupTest),
     };
 
     int res = cmocka_run_group_tests(tests, NULL, NULL);

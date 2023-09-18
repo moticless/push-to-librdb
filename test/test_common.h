@@ -31,8 +31,9 @@ void runSystemCmd(const char *cmdFormat, ...);
 void assert_json_equal(const char *f1, const char *f2, int ignoreListOrder);
 
 /* Test against Redis Server */
-extern int redisPort;
-void setupRedisServer(const char *installFolder);
+void setRedisInstallFolder(const char *path);
+int getRedisPort();
+void setupRedisServer(const char *extraArgs);
 void teardownRedisServer();
 int isSetRedisServer();
 char *sendRedisCmd(char *cmd, int expRetType, char *expRsp);

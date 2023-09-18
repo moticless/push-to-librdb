@@ -16,9 +16,12 @@
 #include "../src/ext/utils.c" /* for printHexDump() */
 
 /* Live Redis server for some of the tests (Optional) */
-redisContext *redisConnContext = NULL;
-int          redisPort=0;
-pid_t        redisPID = 0;
+#define MAX_NUM_REDIS_INST 2
+int        currRedisInst = -1;
+redisContext *redisServersStack[MAX_NUM_REDIS_INST] = {0};
+int        redisPort[MAX_NUM_REDIS_INST]= {0};
+pid_t      redisPID[MAX_NUM_REDIS_INST] = {0};
+const char *redisInstallFolder  = NULL;
 
 void runSystemCmd(const char *cmdFormat, ...) {
     char cmd[1024];
@@ -180,8 +183,11 @@ int findFreePort(int startPort, int endPort) {
 }
 
 void cleanupRedisServer() {
-    if (redisPID)
-        kill(redisPID, SIGTERM);
+    for (int i=0 ; i <=currRedisInst ; ++i ) {
+        if (redisPID[i])
+            kill(redisPID[i], SIGTERM);
+    }
+
 }
 
 size_t serializeRedisReply(const redisReply *reply, char *buffer, size_t bsize) {
@@ -218,9 +224,9 @@ size_t serializeRedisReply(const redisReply *reply, char *buffer, size_t bsize) 
 char *sendRedisCmd(char *cmd, int expRetType, char *expRsp) {
     static char rspbuf[1000];
 
-    assert_non_null(redisConnContext);
+    assert_int_not_equal(currRedisInst, -1);
 
-    redisReply *reply = redisCommand(redisConnContext, cmd);
+    redisReply *reply = redisCommand(redisServersStack[currRedisInst], cmd);
 
     //printf ("Command:%s\n", cmd);
 
@@ -241,20 +247,27 @@ char *sendRedisCmd(char *cmd, int expRetType, char *expRsp) {
     return rspbuf;
 }
 
-void setupRedisServer(const char *installFolder) {
+void setRedisInstallFolder(const char *path) {
+    redisInstallFolder = path;
+}
+
+void setupRedisServer(const char *extraArgs) {
+    UNUSED(extraArgs);
+
+    const char *_extraArgs = (extraArgs) ? extraArgs : "--loglevel verbose"; /* execl() won't accept empty string */
+    if (!redisInstallFolder) return; /* return gracefully (Might not have redis installed) */
+
     pid_t pid = fork();
     assert_int_not_equal (pid, -1);
 
-    redisPort = findFreePort(6500, 6600);
+    int port = findFreePort(6500, 6600);
 
     if (pid == 0) { /* child */
         char redisPortStr[10], fullpath[256], testrdbModulePath[256];
 
-        printf("Found free port to run Redis: %d\n", redisPort);
-
-        snprintf(fullpath, sizeof(fullpath), "%s/redis-server", installFolder);
-        snprintf(testrdbModulePath, sizeof(testrdbModulePath), "%s/../tests/modules/testrdb.so", installFolder);
-        snprintf(redisPortStr, sizeof(redisPortStr), "%d", redisPort);
+        snprintf(fullpath, sizeof(fullpath), "%s/redis-server", redisInstallFolder);
+        snprintf(testrdbModulePath, sizeof(testrdbModulePath), "%s/../tests/modules/testrdb.so", redisInstallFolder);
+        snprintf(redisPortStr, sizeof(redisPortStr), "%d", port);
 
         /* if module testrdb.so exists (ci.yaml takes care to build testrdb), part
          * of redis repo testing, then load it for test_rdb_to_redis_module. The
@@ -266,12 +279,14 @@ void setupRedisServer(const char *installFolder) {
                   "--dir", "./test/tmp/",
                   "--logfile", "./redis.log",
                   "--loadmodule", testrdbModulePath, "4",
+                  _extraArgs,
                   (char *) NULL);
         } else {
             execl(fullpath, fullpath,
                   "--port", redisPortStr,
                   "--dir", "./test/tmp/",
                   "--logfile", "./redis.log",
+                  _extraArgs,
                   (char *) NULL);
        }
 
@@ -281,7 +296,7 @@ void setupRedisServer(const char *installFolder) {
     } else { /* parent */
         int retryCount = 3;
 
-        redisConnContext = redisConnect("localhost", redisPort);
+        redisContext *redisConnContext = redisConnect("localhost", port);
         while ((!redisConnContext) || (redisConnContext->err)) {
 
             if (redisConnContext) redisFree(redisConnContext);
@@ -295,10 +310,14 @@ void setupRedisServer(const char *installFolder) {
             struct timespec req = {0, 50000*1000}, rem;
             nanosleep(&req, &rem);
 
-            redisConnContext = redisConnect("localhost", redisPort);
+            redisConnContext = redisConnect("localhost", port);
         }
 
-        redisPID = pid;
+        assert_true(++currRedisInst<MAX_NUM_REDIS_INST);
+        redisPort[currRedisInst] = port;
+        redisServersStack[currRedisInst] = redisConnContext;
+        redisPID[currRedisInst]  = pid;
+        printf(">> Redis Server(%d) started on port %d with PID %d\n", currRedisInst, port, pid);
 
         /* Close any subprocess in case of exit due to error flow */
         atexit(cleanupRedisServer);
@@ -306,19 +325,24 @@ void setupRedisServer(const char *installFolder) {
 }
 
 void teardownRedisServer() {
-    if (redisConnContext) {
-        assert_non_null(redisConnContext);
-        assert_null(redisCommand(redisConnContext, "SHUTDOWN"));
-        redisFree(redisConnContext);
-        redisConnContext = NULL;
+    if (currRedisInst>=0) {
+        redisContext *ctx = redisServersStack[currRedisInst];
+        assert_non_null(ctx);
+        assert_null(redisCommand(ctx, "SHUTDOWN"));
+        redisFree(ctx);
+        --currRedisInst;
         wait(NULL);
     }
 }
 
 int isSetRedisServer() {
-    return (redisConnContext != NULL);
+    return (currRedisInst>=0);
 }
 
+int getRedisPort() {
+    assert_true(currRedisInst>=0);
+    return redisPort[currRedisInst];
+}
 /* Redis OSS does not support restoring module auxiliary data. This feature
  * is currently available only in Redis Enterprise. There are plans to bring
  * this functionality to Redis OSS in the near future. */

@@ -113,7 +113,11 @@ static void printUsage(int shortUsage) {
     printf("\t-h, --hostname <HOSTNAME>     Specify the server hostname (default: 127.0.0.1)\n");
     printf("\t-p, --port <PORT>             Specify the server port (default: 6379)\n");
     printf("\t-l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses\n");
-    printf("\t-s, --start-cmd-num <NUM>     Start writing redis from command number\n\n");
+    printf("\t-s, --start-cmd-num <NUM>     Start writing redis from command number\n");
+    printf("\t-u, --user <USER>             Redis username for authentication\n");
+    printf("\t-P, --password <PWD>          Redis password for authentication\n");
+    printf("\t-c, --custom-auth <CMD>       Customized authentication command in case of proxy\n");
+
 }
 
 static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) {
@@ -157,12 +161,12 @@ static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) 
 }
 
 static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv) {
+    RdbxRedisAuth auth = {0};
+    RdbxToRespConf conf = { 0 };
     int startCmdNum=0, pipeDepthVal=0, port = 6379;
     RdbxRespToRedisLoader *respToRedis;
     RdbxToResp *rdbToResp;
     const char *hostname = "127.0.0.1";
-
-    RdbxToRespConf conf = { 0 };
 
     /* parse specific command options */
     for (int at = 1; at < argc; ++at) {
@@ -173,6 +177,9 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
         if (getOptArg(argc, argv, &at, "-t", "--target-redis-ver", NULL, &(conf.dstRedisVersion))) continue;
         if (getOptArgVal(argc, argv, &at, "-l", "--pipeline-depth", NULL, &pipeDepthVal, 1, 1000)) continue;
         if (getOptArgVal(argc, argv, &at, "-n", "--start-cmd-num", NULL, &startCmdNum, 1, INT_MAX)) continue;
+        if (getOptArg(argc, argv, &at, "-u", "--user", NULL, &auth.user)) continue;
+        if (getOptArg(argc, argv, &at, "-P", "--password", NULL, &auth.pwd)) continue;
+        if (getOptArg(argc, argv, &at, "-c", "--custom-auth", NULL, &auth.authCmd)) continue;
 
         fprintf(stderr, "Invalid REDIS [FORMAT_OPTIONS] argument: %s\n", opt);
         printUsage(1);
@@ -188,7 +195,11 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
     if (startCmdNum)
         RDBX_writeFromCmdNumber(rdbToResp, startCmdNum);
 
-    if ((respToRedis = RDBX_createRespToRedisTcp(parser, rdbToResp, hostname, port)) == NULL)
+    if ((respToRedis = RDBX_createRespToRedisTcp(parser,
+                                                 rdbToResp,
+                                                 &auth,
+                                                 hostname,
+                                                 port)) == NULL)
         return RDB_ERR_GENERAL;
 
     if (pipeDepthVal)

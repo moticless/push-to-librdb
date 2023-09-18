@@ -44,6 +44,7 @@ typedef enum {
     RDBX_ERR_RESP2REDIS_FAILED_WRITE,
     RDBX_ERR_RESP2REDIS_CONN_CLOSE,
     RDBX_ERR_RESP2REDIS_MAX_RETRIES,
+    RDBX_ERR_RESP2REDIS_CUSTOM_AUTH_CMD_INVALID,
 } RdbxRes;
 
 /****************************************************************
@@ -167,14 +168,22 @@ _LIBRDB_API RdbxRespToFileWriter *RDBX_createRespToFileWriter(RdbParser *p,
  * Can configure pipeline depth of transmitted RESP commands. Set
  * to 0 to use default.
  ****************************************************************/
+typedef struct RdbxRedisAuth {
+    const char *pwd;
+    const char *user;
+    const char *authCmd;  /* alternative auth-cmd in the presence of proxy */
+} RdbxRedisAuth;
+
 _LIBRDB_API RdbxRespToRedisLoader *RDBX_createRespToRedisTcp(RdbParser *p,
-                                                            RdbxToResp *rdbToResp,
-                                                            const char *hostname,
-                                                            int port);
+                                                             RdbxToResp *rdbToResp,
+                                                             RdbxRedisAuth *auth, /*opt*/
+                                                             const char *hostname,
+                                                             int port);
 
 _LIBRDB_API RdbxRespToRedisLoader *RDBX_createRespToRedisFd(RdbParser *p,
-                                                          RdbxToResp *rdbToResp,
-                                                          int fd);
+                                                            RdbxToResp *rdbToResp,
+                                                            RdbxRedisAuth *auth, /*opt*/
+                                                            int fd);
 
 _LIBRDB_API void RDBX_setPipelineDepth(RdbxRespToRedisLoader *r2r, int depth);
 

@@ -145,8 +145,8 @@ int main(int argc, char *argv[]) {
     cleanTmpFolder();
 
     /* Setup redis if configured */
-    if (redisInstallFolder)
-        setupRedisServer(redisInstallFolder);
+    setRedisInstallFolder(redisInstallFolder);
+    setupRedisServer(NULL);
 
     //setenv("LIBRDB_DEBUG_DATA", "1", 1); /* << to see parser states printouts */
 
