@@ -16,7 +16,7 @@ FILE* logfile = NULL;
 /* common options to all FORMATTERS */
 typedef struct Options {
     const char *logfilePath;
-    RdbRes (*formatFunc)(RdbParser *p, char *input, int argc, char **argv);
+    RdbRes (*formatFunc)(RdbParser *p, int argc, char **argv);
 } Options;
 
 static int getOptArg(int argc, char* argv[], int *at, char *abbrvOpt, char *opt, int *flag, const char **arg) {
@@ -120,7 +120,7 @@ static void printUsage(int shortUsage) {
 
 }
 
-static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) {
+static RdbRes formatJson(RdbParser *parser, int argc, char **argv) {
     const char *includeArg;
     const char *output = NULL;/*default:stdout*/
     int includeFunc=0, includeAuxField=0, flatten=0; /*without*/
@@ -151,16 +151,13 @@ static RdbRes formatJson(RdbParser *parser, char *input, int argc, char **argv) 
             .includeFunc = includeFunc,
     };
 
-    if (RDBX_createReaderFile(parser, input) == NULL)
-        return RDB_ERR_GENERAL;
-
     if (RDBX_createHandlersToJson(parser, output, &conf) == NULL)
         return RDB_ERR_GENERAL;
 
     return RDB_OK;
 }
 
-static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv) {
+static RdbRes formatRedis(RdbParser *parser, int argc, char **argv) {
     RdbxRedisAuth auth = {0};
     RdbxToRespConf conf = { 0 };
     int startCmdNum=0, pipeDepthVal=0, port = 6379;
@@ -186,20 +183,13 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
         return RDB_ERR_GENERAL;
     }
 
-    if (RDBX_createReaderFile(parser, input) == NULL)
-        return RDB_ERR_GENERAL;
-
     if ((rdbToResp = RDBX_createHandlersToResp(parser, &conf)) == NULL)
         return RDB_ERR_GENERAL;
 
     if (startCmdNum)
         RDBX_writeFromCmdNumber(rdbToResp, startCmdNum);
 
-    if ((respToRedis = RDBX_createRespToRedisTcp(parser,
-                                                 rdbToResp,
-                                                 &auth,
-                                                 hostname,
-                                                 port)) == NULL)
+    if ((respToRedis = RDBX_createRespToRedisTcp(parser, rdbToResp, &auth, hostname, port)) == NULL)
         return RDB_ERR_GENERAL;
 
     if (pipeDepthVal)
@@ -208,7 +198,7 @@ static RdbRes formatRedis(RdbParser *parser, char *input, int argc, char **argv)
     return RDB_OK;
 }
 
-static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) {
+static RdbRes formatResp(RdbParser *parser, int argc, char **argv) {
     RdbxToResp *rdbToResp;
     const char *output = NULL;/*default:stdout*/
     int commandEnum = 0;
@@ -227,9 +217,6 @@ static RdbRes formatResp(RdbParser *parser, char *input, int argc, char **argv) 
         printUsage(1);
         return RDB_ERR_GENERAL;
     }
-
-    if (RDBX_createReaderFile(parser, input) == NULL)
-        return RDB_ERR_GENERAL;
 
     if ((rdbToResp = RDBX_createHandlersToResp(parser, &conf)) == NULL)
         return RDB_ERR_GENERAL;
@@ -352,7 +339,15 @@ int main(int argc, char **argv)
     RDB_setLogLevel(parser, RDB_LOG_INF);
     RDB_setLogger(parser, logger);
 
-    if (RDB_OK != (res = options.formatFunc(parser, input, argc - at, argv + at)))
+    if (strcmp(input, "-") == 0) {
+        if (RDBX_createReaderFileDesc(parser, 0 /*stdin*/, 0) == NULL)
+            return RDB_ERR_GENERAL;
+    } else {
+        if (RDBX_createReaderFile(parser, input /*file*/) == NULL)
+            return RDB_ERR_GENERAL;
+    }
+
+    if (RDB_OK != (res = options.formatFunc(parser, argc - at, argv + at)))
         return res;
 
     if (RDB_OK != RDB_getErrorCode(parser))
