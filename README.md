@@ -46,9 +46,9 @@ Install and run CLI extension of this library. Parse RDB file to json:
     }]
 
 
-Run CLI extension to generate RESP commands
+Run CLI extension to generate RESP commands (this time read file from standard input):
 
-    % rdb-cli ./test/dumps/multiple_lists_strings.rdb resp
+    % gzip -dc multiple_lists_strings.rdb.gz | rdb-cli - resp
     *3
     $3
     SET
@@ -190,8 +190,8 @@ core library vs. extension library ("RDB" vs "RDBX").
 
 - Parsing RDB file with user callbacks:
 
-      RdbRes myHandleNewKey(RdbParser *parser, void *userData,  RdbBulk key,...) { 
-          printf("%s\n", key);
+      RdbRes myHandleNewKey(RdbParser *parser, void *userData,  RdbBulk key, RdbKeyInfo *info) { 
+          printf("KEY=%s\n", key);
           return RDB_OK;
       } 
 
