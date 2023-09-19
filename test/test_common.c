@@ -252,10 +252,12 @@ void setRedisInstallFolder(const char *path) {
 }
 
 void setupRedisServer(const char *extraArgs) {
-    UNUSED(extraArgs);
 
-    const char *_extraArgs = (extraArgs) ? extraArgs : "--loglevel verbose"; /* execl() won't accept empty string */
-    if (!redisInstallFolder) return; /* return gracefully (Might not have redis installed) */
+    /* If redis not installed return gracefully */
+    if (!redisInstallFolder) return;
+
+    /* execl() not accept empty string */
+    const char *_extraArgs = (extraArgs) ? extraArgs : "--loglevel verbose";
 
     pid_t pid = fork();
     assert_int_not_equal (pid, -1);

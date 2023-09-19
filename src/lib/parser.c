@@ -1850,15 +1850,17 @@ RdbStatus elementModule(RdbParser *p) {
 /*** Loaders from RDB ***/
 
 RdbStatus rdbLoadFloatValue(RdbParser *p, float *val) {
-    BulkInfo *binfoUnused;
-    IF_NOT_OK_RETURN(rdbLoad(p, sizeof(*val), RQ_ALLOC_REF, (char *) val, &binfoUnused));
+    BulkInfo *binfo;
+    IF_NOT_OK_RETURN(rdbLoad(p, sizeof(*val), RQ_ALLOC, NULL, &binfo));
+    *val = *((float*) binfo->ref);
     memrev32ifbe(val);
     return RDB_STATUS_OK;
 }
 
 RdbStatus rdbLoadDoubleValue(RdbParser *p, double *val) {
-    BulkInfo *binfoUnused;
-    IF_NOT_OK_RETURN(rdbLoad(p, sizeof(*val), RQ_ALLOC_REF, (char *) val, &binfoUnused));
+    BulkInfo *binfo;
+    IF_NOT_OK_RETURN(rdbLoad(p, sizeof(*val), RQ_ALLOC, NULL, &binfo));
+    *val = *((double*) binfo->ref);
     memrev64ifbe(val);
     return RDB_STATUS_OK;
 }

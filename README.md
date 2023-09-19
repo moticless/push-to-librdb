@@ -259,7 +259,9 @@ destruction, or when newer block replacing old one.
             -p, --port <PORT>             Specify the server port (default: 6379)
             -l, --pipeline-depth <VALUE>  Number of pending commands before blocking for responses
             -s, --start-cmd-num <NUM>     Start writing redis from command number
-
+            -u, --user <USER>             Redis username for authentication
+            -P, --password <PWD>          Redis password for authentication
+            -c, --custom-auth <CMD>       Customized authentication command in case of proxy
 
 <a name="Advanced"></a>
 ## Advanced

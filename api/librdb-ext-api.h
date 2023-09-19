@@ -131,11 +131,11 @@ typedef struct RdbxToRespConf {
 _LIBRDB_API RdbxToResp *RDBX_createHandlersToResp(RdbParser *, RdbxToRespConf *);
 
 /****************************************************************
- * Attach RESP writer
+ * RESP writer
  *
  * Create instance for writing RDB to RESP stream.
  *
- * Used by:  RDBX_createRespToRedisTcp
+ * Imp by:   RDBX_createRespToRedisTcp
  *           RDBX_createRespToRedisFd
  *           RDBX_createRespToFileWriter
  *           <user-defined-writer>
