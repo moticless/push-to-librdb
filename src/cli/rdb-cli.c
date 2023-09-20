@@ -263,32 +263,38 @@ int readCommonOptions(RdbParser *p, int argc, char* argv[], Options *options, in
             continue;
 
         if (getOptArg(argc, argv, &at, "-k", "--key", NULL, &keyFilter)) {
-            if (applyFilters) RDBX_createHandlersFilterKey(p, keyFilter, 0);
+            if (applyFilters && (!RDBX_createHandlersFilterKey(p, keyFilter, 0)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 
         if (getOptArg(argc, argv, &at, "-K", "--no-key", NULL, &keyFilter)) {
-            if (applyFilters) RDBX_createHandlersFilterKey(p, keyFilter, 1);
+            if (applyFilters && (!RDBX_createHandlersFilterKey(p, keyFilter, 1)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 
         if (getOptArg(argc, argv, &at, "-t", "--type", NULL, &typeFilter)) {
-            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 0);
+            if ((applyFilters) && (!RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 0)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 
         if (getOptArg(argc, argv, &at, "-T", "--no-type", NULL, &typeFilter)) {
-            if (applyFilters) RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 1);
+            if ((applyFilters) && (!RDBX_createHandlersFilterType(p, matchRdbDataType(typeFilter), 1)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 
         if (getOptArgVal(argc, argv, &at, "-d", "--dbnum", NULL, &dbNumFilter, 0, INT_MAX)) {
-            if (applyFilters) RDBX_createHandlersFilterDbNum(p, dbNumFilter, 0);
+            if ((applyFilters) && (!RDBX_createHandlersFilterDbNum(p, dbNumFilter, 0)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 
         if (getOptArgVal(argc, argv, &at, "-D", "--no-dbnum", NULL, &dbNumFilter, 0, INT_MAX)) {
-            if (applyFilters) RDBX_createHandlersFilterDbNum(p, dbNumFilter, 1);
+            if ((applyFilters) && (!RDBX_createHandlersFilterDbNum(p, dbNumFilter, 1)))
+                exit(RDBX_ERR_FAILED_CREATE_FILTER);
             continue;
         }
 

@@ -94,6 +94,12 @@ static void test_rdb_cli_filter_key(void **state) {
     runSystemCmd(" ./bin/rdb-cli ./test/dumps/multiple_lists_strings.rdb -K string2 json -f | grep lzf_compressed > /dev/null ");
 }
 
+static void test_rdb_cli_filter_invalid_input(void **state) {
+    UNUSED(state);
+    /* invalid regex */
+    runSystemCmd(" ./bin/rdb-cli ./test/dumps/single_key.rdb -k \"[*x\" json | grep \"Unmatched \\[\" > /dev/null");
+}
+
 static void test_rdb_cli_filter_type(void **state) {
     UNUSED(state);
     /* -t/--type */
@@ -157,6 +163,7 @@ int group_test_rdb_cli(void) {
             cmocka_unit_test_setup(test_rdb_cli_resp_to_redis, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_db, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_key, setupTest),
+            cmocka_unit_test_setup(test_rdb_cli_filter_invalid_input, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_type, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_filter_mix, setupTest),
             cmocka_unit_test_setup(test_rdb_cli_redis_auth, setupTest),

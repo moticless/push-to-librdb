@@ -31,6 +31,7 @@ typedef enum {
 
     /* HandlersFilterKey errors */
     RDBX_ERR_FILTER_FAILED_COMPILE_REGEX,
+    RDBX_ERR_FAILED_CREATE_FILTER,
 
     /* rdb2resp errors */
 

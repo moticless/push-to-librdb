@@ -80,6 +80,11 @@ static void test_mixed_levels_registration(void **state) {
     assert_json_equal(jsonfileData, DUMP_FOLDER("multiple_lists_strings_subset_list.json"), 1);
 }
 
+static void test_examples(void **state) {
+    UNUSED(state);
+    runSystemCmd("make example > /dev/null ");
+}
+
 static void printResPicture(int result) {
     if (result)
         printf("    x_x\n"
@@ -100,6 +105,20 @@ static void printResPicture(int result) {
         printf ("\n--- Test Group: %s ---\n", #grp); \
         result |= grp(); \
     }
+
+/*************************** group_examples ***************************
+ * Test the examples in the './examples' directory. These examples
+ * do not necessarily support asynchronous events 'WAIT_MORE_DATA.'
+ * Therefore, 'group_examples()' should not be called when the environment
+ * variable 'LIBRDB_SIM_WAIT_MORE_DATA' is set to '1'.
+ *********************************************************************/
+int group_examples(void) {
+    /* Insert here your test functions */
+    const struct CMUnitTest tests[] = {
+            cmocka_unit_test(test_examples),
+    };
+    return cmocka_run_group_tests(tests, NULL, NULL);
+}
 
 /*************************** group_main *******************************/
 int group_main(void) {
@@ -152,6 +171,7 @@ int main(int argc, char *argv[]) {
 
     printf("\n*************** START TESTING *******************\n");
     setEnvVar("LIBRDB_SIM_WAIT_MORE_DATA", "0");
+    RUN_TEST_GROUP(group_examples);
     RUN_TEST_GROUP(group_test_resp_reader);
     RUN_TEST_GROUP(group_rdb_to_resp);
     RUN_TEST_GROUP(group_main);

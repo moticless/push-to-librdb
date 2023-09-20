@@ -202,10 +202,10 @@ int redisAuth(RdbxRespToRedisLoader *ctx, RdbxRedisAuth *auth) {
 
     if (auth->pwd) { /* AUTH [username] password */
         if (auth->user) {
-            len = snprintf(buf, sizeof(buf) - 1, "*3\r\n$4\r\nauth\r\n$%ld\r\n%s\r\n$%ld\r\n%s\r\n",
+            len = snprintf(buf, sizeof(buf), "*3\r\n$4\r\nauth\r\n$%ld\r\n%s\r\n$%ld\r\n%s\r\n",
                            strlen(auth->user), auth->user, strlen(auth->pwd), auth->pwd);
         } else {
-            len = snprintf(buf, sizeof(buf) - 1, "*2\r\n$4\r\nauth\r\n$%ld\r\n%s\r\n", strlen(auth->pwd), auth->pwd);
+            len = snprintf(buf, sizeof(buf), "*2\r\n$4\r\nauth\r\n$%ld\r\n%s\r\n", strlen(auth->pwd), auth->pwd);
         }
     } else {  /* custom auth command */
         len = snprintf(buf, sizeof(buf)-1, "*?\r\n"); /*buf[1] = to be filled up at the end when numTokens is known */

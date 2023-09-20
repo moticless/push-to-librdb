@@ -441,7 +441,7 @@ RdbxToJson *RDBX_createHandlersToJson(RdbParser *p, const char *filename, RdbxTo
         dataCb.handleListItem = toJsonList;
         dataCb.handleHashField = toJsonHash;
         dataCb.handleSetMember = toJsonSet;
-        dataCb.handleFunction = (conf->includeFunc) ? toJsonFunction : NULL;
+        dataCb.handleFunction = (ctx->conf.includeFunc) ? toJsonFunction : NULL;
         dataCb.handleModule = toJsonModule;
         RDB_createHandlersData(p, &dataCb, ctx, deleteRdbToJsonCtx);
 
@@ -465,7 +465,7 @@ RdbxToJson *RDBX_createHandlersToJson(RdbParser *p, const char *filename, RdbxTo
         structCb.handleSetIS = toJsonStruct;
         structCb.handleSetLP = toJsonStruct;
         /* function */
-        structCb.handleFunction = (conf->includeFunc) ? toJsonFunction : NULL;
+        structCb.handleFunction = (ctx->conf.includeFunc) ? toJsonFunction : NULL;
         /* module */
         structCb.handleModule = toJsonModule;
         RDB_createHandlersStruct(p, &structCb, ctx, deleteRdbToJsonCtx);

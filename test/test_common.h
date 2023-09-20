@@ -43,6 +43,7 @@ int isSupportRestoreModuleAux();
 int group_rdb_to_redis();
 int group_test_rdb_cli();
 int group_rdb_to_resp();
+int group_examples();
 int group_main();
 int group_rdb_to_json();
 int group_mem_management();

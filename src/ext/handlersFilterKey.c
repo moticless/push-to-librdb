@@ -271,7 +271,7 @@ static void defaultFilterRawCb(RdbHandlersRawCallbacks *rawCb) {
     rawCb->handleNewDb = filterNewDb;
     rawCb->handleDbSize = filterDbSize;
 
-    //callbacks.rawCb.handleBeginModuleAux  /* not partof keyspace */
+    //callbacks.rawCb.handleBeginModuleAux  /* not part of keyspace */
     rawCb->handleBegin = filterRawBegin;
     rawCb->handleFrag = filterFrag;
     rawCb->handleEnd = filterRawEnd;
@@ -293,10 +293,13 @@ static RdbxFilter *createHandlersFilterCommon(RdbParser *p,
 
     /* specific if-else init to filter regex/type/dbnum */
     if (keyRegex) {   /* filter keys by regex */
+        int rc;
         /* compile the regular expression */
-        if (regcomp(&ctx->regex_compiled, keyRegex, REG_EXTENDED) != 0) {
+        if ( (rc = regcomp(&ctx->regex_compiled, keyRegex, REG_EXTENDED)) != 0) {
+            char    buff[100];
+            regerror(rc, &ctx->regex_compiled, buff, 100);
             RDB_reportError(p, (RdbRes) RDBX_ERR_FILTER_FAILED_COMPILE_REGEX,
-                            "FilterKey: Error compiling regular expression");
+                            "FilterKey: Error compiling regular expression: %s", buff);
             deleteFilterCtx(p, ctx);
             return NULL;
         }
