@@ -360,7 +360,7 @@ static RdbRes toJsonHash(RdbParser *p, void *userData, RdbBulk field, RdbBulk va
         fprintf(ctx->outfile, ",");
         outputQuotedEscaping(ctx, field, RDB_bulkLen(p, field));
         fprintf(ctx->outfile, ":");
-        outputQuotedEscaping(ctx, field, RDB_bulkLen(p, field));
+        outputQuotedEscaping(ctx, value, RDB_bulkLen(p, value));
 
     } else {
         RDB_reportError(p, (RdbRes) RDBX_ERR_R2J_INVALID_STATE,

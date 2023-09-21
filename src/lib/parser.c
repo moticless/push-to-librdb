@@ -146,7 +146,7 @@ static inline RdbStatus updateStateAfterParse(RdbParser *p, RdbStatus status);
 static void printParserState(RdbParser *p);
 
 static inline void restoreEmbeddedBulk(RdbParser *p, EmbeddedBulk *embeddedBulk);
-void *allocEmbeddedBulk(RdbParser *p,
+static void *allocEmbeddedBulk(RdbParser *p,
                       unsigned char *str,
                       unsigned int slen,
                       long long sval,
@@ -906,7 +906,7 @@ static inline void restoreEmbeddedBulk(RdbParser *p, EmbeddedBulk *embeddedBulk)
 }
 
 /* return 0 on failure */
-void *allocEmbeddedBulk(RdbParser *p,
+static void *allocEmbeddedBulk(RdbParser *p,
                       unsigned char *str,
                       unsigned int slen,
                       long long sval,
@@ -931,7 +931,7 @@ void *allocEmbeddedBulk(RdbParser *p,
     return embeddedBulk->binfo.ref;
 }
 
-RdbStatus hashZiplist(RdbParser *p, BulkInfo *ziplistBulk) {
+static RdbStatus hashZiplist(RdbParser *p, BulkInfo *ziplistBulk) {
     size_t items = 0;
 
     if (unlikely(0 == ziplistValidateIntegrity(ziplistBulk->ref, ziplistBulk->len, p->deepIntegCheck, counterCallback, &items))) {
@@ -983,7 +983,7 @@ RdbStatus hashZiplist(RdbParser *p, BulkInfo *ziplistBulk) {
     return RDB_STATUS_OK;
 }
 
-RdbStatus hashListPack(RdbParser *p, BulkInfo *lpBulk) {
+static RdbStatus hashListPack(RdbParser *p, BulkInfo *lpBulk) {
     size_t items = 0;
 
     if (unlikely(0 == lpValidateIntegrity(lpBulk->ref, lpBulk->len, p->deepIntegCheck, counterCallback, &items))) {
@@ -1035,7 +1035,7 @@ RdbStatus hashListPack(RdbParser *p, BulkInfo *lpBulk) {
     return RDB_STATUS_OK;
 }
 
-RdbStatus hashZipMap(RdbParser *p, BulkInfo *zpBulk) {
+static RdbStatus hashZipMap(RdbParser *p, BulkInfo *zpBulk) {
     unsigned char *field, *value;
     unsigned int fieldLen, valueLen;
 
@@ -1543,8 +1543,7 @@ RdbStatus elementHashZL(RdbParser *p) {
 
     /*** ENTER SAFE STATE ***/
 
-    if (RDB_STATUS_ERROR == hashZiplist(p, ziplistBulk))
-        return RDB_STATUS_ERROR;
+    IF_NOT_OK_RETURN(hashZiplist(p, ziplistBulk));
 
     return nextParsingElement(p, PE_END_KEY);
 }
@@ -1556,8 +1555,7 @@ RdbStatus elementHashLP(RdbParser *p) {
 
     /*** ENTER SAFE STATE ***/
 
-    if (RDB_STATUS_ERROR == hashListPack(p, listpackBulk))
-        return RDB_STATUS_ERROR;
+    IF_NOT_OK_RETURN(hashListPack(p, listpackBulk));
 
     return nextParsingElement(p, PE_END_KEY);
 }
@@ -1569,8 +1567,7 @@ RdbStatus elementHashZM(RdbParser *p) {
 
     /*** ENTER SAFE STATE ***/
 
-    if (RDB_STATUS_ERROR == hashZipMap(p, zipmapBulk))
-        return RDB_STATUS_ERROR;
+    IF_NOT_OK_RETURN(hashZipMap(p, zipmapBulk));
 
     return nextParsingElement(p, PE_END_KEY);
 }

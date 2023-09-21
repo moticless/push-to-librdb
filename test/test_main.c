@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
 
     char *redisInstallFolder = getenv("LIBRDB_REDIS_FOLDER");
 
-    const char *USAGE ="<cmd> [-h|--help] [f|--redis-folder <folder>] [-g|--run-group <group-prefix>] [-t|--test-filter <filter>]";
+    const char *USAGE ="<cmd> [-h|--help] [f|--redis-folder <folder>] [-g|--test-group <group-prefix>] [-t|--test <filter>]";
     /* Parse command-line arguments */
     for (int i = 1; i < argc; i++) {
         if ((strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)) {
@@ -147,9 +147,9 @@ int main(int argc, char *argv[]) {
             exit(EXIT_SUCCESS);
         } else if ((strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--redis-folder") == 0) && i+1 < argc) {
             redisInstallFolder = argv[++i];
-        } else if ((strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "--run-group") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "--test-group") == 0) && i+1 < argc) {
             runGroupPrefix = argv[++i];
-        } else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--test-filter") == 0) && i+1 < argc) {
+        } else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--test") == 0) && i+1 < argc) {
             testFilter = argv[++i];
         } else {
             printf("Invalid argument: %s\n%s\n", argv[i], USAGE);

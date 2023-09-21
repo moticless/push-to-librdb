@@ -439,11 +439,12 @@ static unsigned char xorstr(const char *str) {
 
 /* sanitize, sort, and compare */
 #define MAX_LINE_LENGTH  4096
+#define MAX_LINES 4096
 void assert_json_equal(const char* filename1, const char* filename2, int ignoreListOrder) {
     char line1[MAX_LINE_LENGTH];
     char line2[MAX_LINE_LENGTH];
-    char* lines1[MAX_LINE_LENGTH];
-    char* lines2[MAX_LINE_LENGTH];
+    char* lines1[MAX_LINES];
+    char* lines2[MAX_LINES];
     int lineCount1 = 0;
     int lineCount2 = 0;
     int res = -1;
